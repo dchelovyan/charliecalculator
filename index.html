@@ -1,0 +1,796 @@
+
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Питание — минилоп (обновлено)</title>
+<style>
+  :root{--bg:#0b0d10;--card:#12161b;--text:#e7edf5;--muted:#98a2ad;--ok:#16a34a;--warn:#f59e0b;--bad:#ef4444;--bar:#26313d;--barfill:#3b82f6;--chip:#1f2937}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  h1,h2{margin:0 0 8px}
+  .container{max-width:900px;margin:0 auto;padding:14px}
+  .row{display:flex;gap:10px;align-items:center}
+  .rowi{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1f2937}
+  .hidden{display:none !important}
+  .card{background:var(--card);border-radius:14px;padding:12px}
+  .tile{background:#0f1317;border-radius:10px;padding:8px}
+  .kv{display:grid;grid-template-columns:180px 1fr;gap:6px 12px}
+  .k{color:var(--muted)}
+  .muted{color:var(--muted)}
+  .link{background:none;border:none;color:#93c5fd;padding:0;cursor:pointer}
+  .n{width:120px;padding:6px;border-radius:10px;border:1px solid #334155;background:#0f1317;color:var(--text)}
+  .btn{border:none;border-radius:10px;padding:8px 12px;cursor:pointer}
+  .btn.ok{background:var(--ok);color:white}
+  .btn.info{background:#2563eb;color:white}
+  .btn.muted{background:#1f2937;color:var(--text)}
+  .btn.w{width:100%}
+  .bar{height:8px;background:var(--bar);border-radius:999px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--barfill)}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;background:#111827;color:#cbd5e1;margin-right:6px}
+  input,button{font:inherit}
+  .nav{position:sticky;bottom:0;left:0;right:0;background:#0f1317;border-top:1px solid #1f2937;display:flex;gap:8px;padding:10px}
+  .nav button{flex:1}
+  #modal.hidden{display:none}
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-end}
+  #modal .box{background:var(--card);border-radius:16px 16px 0 0;width:100%;max-height:75vh;overflow:auto;padding:12px}
+  .note{border-radius:10px;padding:8px}
+  .oknote{background:rgba(22,163,74,.15)}
+  .warnnote{background:rgba(245,158,11,.15)}
+  .badnote{background:rgba(239,68,68,.15)}
+  .imgph{background:#0f1317;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#64748b}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+  .elimg{width:100%;height:110px;border-radius:10px;background:#0f1317;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .elcard{background:#0f1317;border-radius:12px;padding:10px;cursor:pointer}
+  .elcard:focus,.elcard:hover{outline:1px solid #334155}
+  .eltitle{font-weight:700}
+  .elsub{color:var(--muted);font-size:13px;margin-top:4px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h1 id="appTitle">Питание — минилоп</h1>
+        <div id="appSub" class="muted">Добро пожаловать</div>
+      </div>
+      <div class="row">
+        <button id="btnElements" class="btn muted" type="button">Элементы</button>
+        <button id="btnSettings" class="btn muted" type="button">Настройки</button>
+      </div>
+    </div>
+  </div>
+
+  <section id="step1" class="card" style="margin-top:10px">
+    <h2>Как зовут питомца?</h2>
+    <div class="row" style="margin-top:8px">
+      <input id="petName" class="n" placeholder="Имя">
+      <button id="next1" class="btn ok" type="button">Далее</button>
+    </div>
+  </section>
+
+  <section id="step2" class="card hidden" style="margin-top:10px">
+    <h2>Вес <span class="muted">(<span id="nameInline1"></span>)</span></h2>
+    <div class="row" style="margin-top:8px">
+      <input id="weight" class="n" type="number" placeholder="г">
+      <button id="calc" class="btn info" type="button">Рассчитать норму</button>
+    </div>
+    <div class="tile" style="margin-top:8px">Дневная норма: <b id="day">—</b> г (по <b id="half">—</b> г утром/вечером)</div>
+    <div class="row" style="margin-top:8px">
+      <button id="next2" class="btn ok" type="button">Далее</button>
+    </div>
+  </section>
+
+  <section id="step3" class="card hidden" style="margin-top:10px">
+    <h2>Нормы на день <span class="muted">(<span id="nameInline2"></span>)</span></h2>
+    <div class="kv" style="margin-top:8px">
+      <div class="k">Кальций (мг)</div><div><input id="t_ca" class="n" type="number"></div>
+      <div class="k">Клетчатка (г)</div><div><input id="t_fiber" class="n" type="number"></div>
+      <div class="k">Белок (г)</div><div><input id="t_protein" class="n" type="number"></div>
+      <div class="k">Фосфор (мг)</div><div><input id="t_p" class="n" type="number"></div>
+      <div class="k">Калий (мг)</div><div><input id="t_k" class="n" type="number"></div>
+      <div class="k">Магний (мг)</div><div><input id="t_mg" class="n" type="number"></div>
+      <div class="k">Натрий (мг)</div><div><input id="t_na" class="n" type="number"></div>
+      <div class="k">Железо (мг)</div><div><input id="t_fe" class="n" type="number"></div>
+      <div class="k">Витамин A (мкг)</div><div><input id="t_va" class="n" type="number"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="finish" class="btn ok" type="button">Готово</button>
+    </div>
+  </section>
+
+  <section id="mealChoice" class="card hidden" style="margin-top:10px">
+    <h2>Приём пищи <span class="muted">(<span id="nameInline3"></span>, норма: <b id="dnLabel">—</b> г/день)</span></h2>
+    <div class="row" style="margin-top:8px">
+      <button class="btn info" data-meal="morning" type="button">Утро</button>
+      <button class="btn info" data-meal="evening" type="button">Вечер</button>
+    </div>
+  </section>
+
+  <section id="herbsScreen" class="card hidden" style="margin-top:10px">
+    <div class="row" style="justify-content:space-between">
+      <h2>Смесь трав</h2>
+      <input id="search" class="n" placeholder="Поиск">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="clearBtn" class="btn muted" type="button">Очистить</button>
+      <button id="calcBtn2" class="btn info" type="button">Посчитать</button>
+      <button id="saveMeal" class="btn ok" type="button">Сохранить приём</button>
+    </div>
+    <div id="herbList" style="margin-top:8px"></div>
+
+    <div id="result" class="hidden" style="margin-top:10px">
+      <div id="sum" class="tile"></div>
+      <div id="bars" style="margin-top:8px"></div>
+      <div id="warnings" style="margin-top:8px"></div>
+      <div id="suggestions" style="margin-top:8px"></div>
+    </div>
+  </section>
+
+  <section id="journalScreen" class="card hidden" style="margin-top:10px">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h2 style="margin:0">Моё питание</h2>
+    </div>
+    <div id="journalList" style="margin-top:8px"></div>
+  </section>
+
+  <div id="modal" class="hidden" aria-hidden="true">
+    <div class="box">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h3 id="modalTitle" style="margin:0">Заголовок</h3>
+        <button class="btn muted" data-close="1" type="button">Закрыть</button>
+      </div>
+      <div id="modalBody" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="nav">
+    <button class="btn muted" data-tab="home" type="button">Главная</button>
+    <button class="btn muted" data-tab="journal" type="button">Журнал</button>
+    <button class="btn muted" data-tab="settings" type="button">Настройки</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $  = s => document.querySelector(s);
+  const $$ = s => document.querySelectorAll(s);
+  const round10 = n => Math.round(n/10)*10;
+  const pct = (v,t) => t>0 ? Math.round(v/t*100) : 0;
+  const today = () => new Date().toISOString().slice(0,10);
+  const TG = window.Telegram?.WebApp; try{TG?.expand?.();TG?.ready?.();}catch{}
+
+  // Персистентное состояние
+  const S = { name:null, weight:null, onboarding:false, meal:null, hayShare:0.7,
+    targets:{ca:960, fiber:20, protein:16, p:400, k:2000, mg:200, na:100, fe:6, va:1500},
+    meals:[]
+  };
+  function load(){ try{const r=localStorage.getItem('rabbitLite'); if(r) Object.assign(S, JSON.parse(r));}catch{} }
+  function save(){ localStorage.setItem('rabbitLite', JSON.stringify(S)); refreshHeader(); }
+
+  const SAFE_UPPER = { "Кальций":120, "Витамин A":130, "Белок":180, "Натрий":120 };
+
+  // ===== Каталог трав (значения на 100 г) =====
+  // Источник чисел для Ca: список пользователя; остальные нутриенты — из общедоступных справочников (USDA FDC и др.).
+  // Для редких растений поля могут быть 0 — их можно дозаполнить через импорт (настройки).
+  const HERBS = {
+    // --- Уже были (сохранены) ---
+    "Салат Айсберг": {ca:18, protein:0.9, fiber:1.2, p:29, k:141, mg:14, na:10, fe:0.4, va:150, maxPerMeal:100, info:"Водянистый."},
+    "Салат латук": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120},
+    "Салат римский": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120},
+    "Капуста красная": {ca:53, protein:1.7, fiber:2.1, p:29, k:233, mg:16, na:8, fe:0.8, va:40, maxPerMeal:60},
+    "Капуста белокочанная": {ca:48, protein:1.3, fiber:2.5, p:26, k:170, mg:12, na:18, fe:0.5, va:5, maxPerMeal:80},
+    "Петрушка": {ca:138, protein:3.0, fiber:3.3, p:58, k:554, mg:50, na:56, fe:6.2, va:4210, maxPerMeal:15, info:"Ca и вит.А — дозировать."},
+    "Укроп": {ca:220, protein:3.5, fiber:2.1, p:66, k:738, mg:55, na:61, fe:6.6, va:2700, maxPerMeal:15},
+    "Кинза (кориандр)": {ca:67, protein:2.1, fiber:2.8, p:48, k:521, mg:26, na:46, fe:1.8, va:337, maxPerMeal:40},
+    "Капуста кудрявая (кейл)": {ca:150, protein:4.3, fiber:4.1, p:92, k:491, mg:47, na:38, fe:1.5, va:681, maxPerMeal:35},
+    "Пак-чой (китайская капуста)": {ca:429, protein:1.5, fiber:1.0, p:37, k:252, mg:19, na:65, fe:0.8, va:446, maxPerMeal:80},
+    "Сельдерей": {ca:44, protein:0.7, fiber:1.6, p:24, k:260, mg:11, na:80, fe:0.2, va:22, maxPerMeal:50},
+    "Мята": {ca:220, protein:3.8, fiber:8.0, p:60, k:570, mg:60, na:30, fe:11.0, va:210, maxPerMeal:10, info:"Эфирные масла — по 5–10 г."},
+    "Мангольд": {ca:51, protein:2.0, fiber:1.6, p:35, k:379, mg:81, na:5, fe:1.8, va:611, highOx:true, maxPerMeal:40},
+    "Одуванчик, лист": {ca:187, protein:2.7, fiber:2.8, p:44, k:397, mg:36, na:7, fe:3.0, va:1000, maxPerMeal:40},
+
+    // --- Новые из списка пользователя ---
+    "Амарант, лист": {ca:215, protein:2.5, fiber:2.1, p:55, k:611, mg:55, na:20, fe:2.3, va:291, maxPerMeal:40},
+    "Базилик": {ca:177, protein:2.7, fiber:3.0, p:48, k:295, mg:64, na:4, fe:3.2, va:264, maxPerMeal:20},
+    "Баклажан, плод": {ca:9, protein:1.0, fiber:3.0, p:24, k:229, mg:14, na:2, fe:0.2, va:23, maxPerMeal:60},
+    "Белокопытник": {ca:103, protein:0, fiber:0, p:0, k:0, mg:0, na:0, fe:0, va:0, maxPerMeal:10, info:"Редкое растение; давайте минимально."},
+    "Брокколи": {ca:48, protein:2.8, fiber:2.6, p:66, k:316, mg:21, na:33, fe:0.7, va:623, maxPerMeal:60},
+    "Брокколи, лист": {ca:349, protein:3.7, fiber:3.3, p:95, k:325, mg:25, na:40, fe:1.5, va:800, maxPerMeal:35},
+    "Брокколи китайская": {ca:105, protein:2.7, fiber:2.0, p:52, k:230, mg:18, na:20, fe:1.0, va:220, maxPerMeal:60},
+    "Брокколи рааб (рапини)": {ca:108, protein:3.2, fiber:3.2, p:73, k:262, mg:22, na:33, fe:2.1, va:1300, maxPerMeal:50},
+    "Виноград, лист": {ca:363, protein:5.6, fiber:11.0, p:83, k:120, mg:40, na:50, fe:2.6, va:15, maxPerMeal:25},
+    "Горчица, лист": {ca:115, protein:2.9, fiber:3.2, p:58, k:384, mg:32, na:20, fe:1.6, va:1510, maxPerMeal:40},
+    "Жеруха (водяной кресс)": {ca:120, protein:2.3, fiber:0.5, p:60, k:330, mg:21, na:41, fe:0.2, va:160, maxPerMeal:60},
+    "Ива, лист": {ca:130, protein:0, fiber:0, p:0, k:0, mg:0, na:0, fe:0, va:0, maxPerMeal:10, info:"Без справочных данных — только как лакомство."},
+    "Иван-чай (кипрей)": {ca:429, protein:4.7, fiber:2.7, p:78, k:494, mg:38, na:12, fe:2.4, va:60, maxPerMeal:30},
+    "Кабачок": {ca:15, protein:1.2, fiber:1.1, p:38, k:261, mg:21, na:3, fe:0.4, va:200, maxPerMeal:80},
+    "Капуста брюссельская": {ca:40, protein:3.4, fiber:3.8, p:69, k:389, mg:23, na:25, fe:1.4, va:755, maxPerMeal:40},
+    "Капуста китайская (пекинская)": {ca:90, protein:1.2, fiber:1.0, p:26, k:230, mg:10, na:11, fe:0.6, va:223, maxPerMeal:80},
+    "Капуста кольраби": {ca:46, protein:1.7, fiber:3.6, p:44, k:350, mg:19, na:20, fe:0.4, va:36, maxPerMeal:60},
+    "Капуста листовая (collard)": {ca:232, protein:3.0, fiber:4.0, p:25, k:213, mg:32, na:20, fe:0.5, va:5000, maxPerMeal:35},
+    "Капуста цветная": {ca:26, protein:1.9, fiber:2.0, p:44, k:299, mg:15, na:30, fe:0.4, va:0, maxPerMeal:60},
+    "Клевер": {ca:3.8, protein:3.2, fiber:3.2, p:55, k:300, mg:30, na:10, fe:1.4, va:600, maxPerMeal:25},
+    "Крапива": {ca:40, protein:3.4, fiber:3.5, p:50, k:400, mg:40, na:10, fe:2.7, va:800, maxPerMeal:30},
+    "Лебеда": {ca:309, protein:4.2, fiber:4.0, p:80, k:452, mg:80, na:8, fe:1.6, va:580, highOx:true, maxPerMeal:25, info:"Оксалаты — умеренно."},
+    "Лопух, лист": {ca:60, protein:2.5, fiber:3.0, p:55, k:308, mg:38, na:5, fe:1.7, va:0, maxPerMeal:30},
+    "Лопух, корень": {ca:100, protein:1.5, fiber:3.3, p:51, k:308, mg:38, na:5, fe:0.8, va:0, maxPerMeal:25},
+    "Марь белая (лебеда белая)": {ca:258, protein:4.2, fiber:4.2, p:80, k:452, mg:80, na:8, fe:1.6, va:580, highOx:true, maxPerMeal:25},
+    "Морковь": {ca:90, protein:0.9, fiber:2.8, p:35, k:320, mg:12, na:69, fe:0.3, va:835, maxPerMeal:30, info:"Сахара — небольшими дозами."},
+    "овёс (зелень)": {ca:117, protein:3.0, fiber:3.0, p:40, k:360, mg:40, na:20, fe:1.5, va:250, maxPerMeal:30},
+    "Огурец": {ca:16, protein:0.7, fiber:0.5, p:24, k:147, mg:13, na:2, fe:0.3, va:105, maxPerMeal:80},
+    "Пастернак": {ca:120, protein:1.2, fiber:4.9, p:71, k:375, mg:29, na:10, fe:0.6, va:0, maxPerMeal:25},
+    "Портулак": {ca:65, protein:2.0, fiber:1.9, p:49, k:494, mg:68, na:45, fe:1.9, va:132, maxPerMeal:40},
+    "Редька": {ca:21, protein:0.7, fiber:1.6, p:20, k:233, mg:12, na:39, fe:0.3, va:7, maxPerMeal:40},
+    "Репа, ботва": {ca:190, protein:1.5, fiber:3.2, p:42, k:296, mg:12, na:25, fe:1.2, va:3189, maxPerMeal:40},
+    "Розмарин": {ca:317, protein:3.3, fiber:14.1, p:54, k:668, mg:91, na:26, fe:6.6, va:292, maxPerMeal:10, info:"Пряность — щепоткой."},
+    "Руккола": {ca:160, protein:2.6, fiber:1.6, p:52, k:369, mg:47, na:27, fe:1.5, va:2373, maxPerMeal:50},
+    "Салат качан": {ca:35, protein:1.2, fiber:1.5, p:25, k:200, mg:14, na:10, fe:1.0, va:600, maxPerMeal:120},
+    "Салат корн (валерианелла)": {ca:38, protein:1.9, fiber:1.8, p:53, k:459, mg:38, na:4, fe:2.0, va:650, maxPerMeal:80},
+    "Салат кресс (садовый)": {ca:81, protein:2.6, fiber:1.1, p:60, k:606, mg:38, na:14, fe:1.3, va:346, maxPerMeal:60},
+    "Свёкла": {ca:56, protein:1.6, fiber:2.8, p:40, k:325, mg:23, na:78, fe:0.8, va:2, maxPerMeal:30},
+    "Свёкла, ботва": {ca:117, protein:2.2, fiber:3.7, p:41, k:762, mg:70, na:213, fe:2.7, va:316, highOx:true, maxPerMeal:30},
+    "Соя пророщенная": {ca:67, protein:13.1, fiber:5.1, p:196, k:703, mg:65, na:15, fe:2.1, va:20, maxPerMeal:20, info:"Бобовые — редко и понемногу."},
+    "Тимьян (чабрец)": {ca:405, protein:5.6, fiber:14.0, p:60, k:609, mg:160, na:55, fe:17.5, va:190, maxPerMeal:8},
+    "Фенхель": {ca:49, protein:1.2, fiber:3.1, p:50, k:414, mg:17, na:52, fe:0.7, va:48, maxPerMeal:40},
+    "Цикорий": {ca:100, protein:1.7, fiber:1.5, p:45, k:290, mg:30, na:47, fe:0.9, va:286, maxPerMeal:60},
+    "Цикорий листовой (эндивий)": {ca:78, protein:1.3, fiber:3.1, p:28, k:321, mg:15, na:14, fe:0.8, va:108, maxPerMeal:60},
+    "Чечевица пророщенная": {ca:25, protein:9.0, fiber:8.0, p:125, k:322, mg:36, na:6, fe:3.0, va:8, maxPerMeal:20},
+    "Шпинат": {ca:99, protein:2.9, fiber:2.2, p:49, k:558, mg:79, na:79, fe:2.7, va:469, highOx:true, maxPerMeal:25},
+    "Шпинат горчичный (комацуна)": {ca:210, protein:2.0, fiber:2.0, p:43, k:363, mg:15, na:22, fe:2.0, va:331, maxPerMeal:40},
+    "Шпинат новозеландский": {ca:58, protein:2.3, fiber:1.5, p:30, k:550, mg:80, na:30, fe:2.7, va:275, highOx:true, maxPerMeal:30},
+    "Щавель": {ca:47, protein:2.0, fiber:3.0, p:40, k:334, mg:103, na:4, fe:2.4, va:400, highOx:true, maxPerMeal:20},
+    // корректировки ранее заведённых с Ca из списка
+    "Брокколи лист (доп.)": {ca:349, protein:3.7, fiber:3.3, p:95, k:325, mg:25, na:40, fe:1.5, va:800, maxPerMeal:35}
+  };
+
+  // ==== Элементы (описания) ====
+  const ELEMENTS = {
+    "Клетчатка": {desc:"Питает микрофлору, поддерживает перистальтику.", unit:"г"},
+    "Кальций": {desc:"Зубы и кости; следим за балансом Ca:P.", unit:"мг"},
+    "Белок": {desc:"Материал для тканей; избыток нежелателен.", unit:"г"},
+    "Фосфор": {desc:"Минерализация, АТФ.", unit:"мг"},
+    "Калий": {desc:"Водный баланс, мышцы.", unit:"мг"},
+    "Магний": {desc:"Нервно-мышечная регуляция.", unit:"мг"},
+    "Натрий": {desc:"Осмотический баланс.", unit:"мг"},
+    "Железо": {desc:"Перенос кислорода.", unit:"мг"},
+    "Витамин A": {desc:"Слизистые, зрение.", unit:"мкг"}
+  };
+
+  // === Питательные ориентиры NDF ===
+  function ndfTargetsKg(weightKg, hayShare = 0.7){
+    const ndfPerKg = 12;
+    const ndfDay = ndfPerKg * (weightKg||0);
+    const ndfFromGreensDay = ndfDay * (1 - hayShare);
+    const ndfPerMealFromGreens = ndfFromGreensDay / 2;
+    return { ndfDay, ndfFromGreensDay, ndfPerMealFromGreens, hayShare };
+  }
+  function currentNdfTargets(){ return ndfTargetsKg((S.weight||0)/1000, S.hayShare??0.7); }
+
+  function dailyNorm(){ return S.weight ? round10(S.weight*0.1) : 0; }
+  function mealLimit(){ return dailyNorm()/2; }
+
+  function totalsFrom(amounts){
+    const t={ca:0,protein:0,fiber:0,p:0,k:0,mg:0,na:0,fe:0,va:0,grams:0,highOx:0};
+    for(const n of Object.keys(amounts)){
+      const g=amounts[n]; if(!g) continue;
+      const h=HERBS[n]; if(!h) continue;
+      t.grams+=g;
+      t.ca+= (h.ca||0)*g/100; t.protein+= (h.protein||0)*g/100; t.fiber+= (h.fiber||0)*g/100;
+      t.p+= (h.p||0)*g/100; t.k+= (h.k||0)*g/100; t.mg+= (h.mg||0)*g/100; t.na+= (h.na||0)*g/100; t.fe+= (h.fe||0)*g/100; t.va+= (h.va||0)*g/100;
+      if(h.highOx) t.highOx+=g;
+    }
+    return t;
+  }
+
+  function bar(label, value, unit, percent){
+    const p=Math.max(0,Math.min(100,percent));
+    return `<div style="margin-top:6px">
+      <div class="row" style="justify-content:space-between"><div>${label}: <b>${value}</b> ${unit}</div><div class="muted">${p}%</div></div>
+      <div class="bar"><i style="width:${p}%"></i></div>
+    </div>`;
+  }
+
+  const rowRefs={};
+  function buildHerbs(){
+    const list=$('#herbList'); if(!list) return;
+    list.innerHTML=''; Object.keys(rowRefs).forEach(k=>delete rowRefs[k]);
+    Object.keys(HERBS).sort((a,b)=>a.localeCompare(b,'ru')).forEach(name=>{
+      const h=HERBS[name]||{};
+      const row=document.createElement('div'); row.className='rowi';
+      row.innerHTML=`
+        <div style="min-width:0">
+          <button class="link herb" type="button">${name}</button>
+          <div class="muted" style="font-size:11px">Ca ${h.ca??'—'}мг · Пр ${h.protein??'—'}г · Кл ${h.fiber??'—'}г /100г</div>
+        </div>
+        <div><input class="n amt" type="number" min="0" step="1" value="0" data-name="${name}" aria-label="${name} (г)"></div>`;
+      row.querySelector('.herb').addEventListener('click',()=>openHerbCard(name));
+      list.appendChild(row); rowRefs[name]=row;
+    });
+    $('#search').value='';
+    $('#search').oninput=()=>{
+      const q=$('#search').value.trim().toLowerCase();
+      Object.keys(rowRefs).forEach(n=> rowRefs[n].style.display = (q && !n.toLowerCase().includes(q))?'none':'' );
+    };
+    $('#clearBtn').onclick=()=> $$('.amt').forEach(i=>i.value=0);
+    $('#calcBtn2').onclick=calc;
+    $('#saveMeal').onclick=saveCurrentMeal;
+  }
+
+  function refreshHeader(){
+    $('#appTitle').textContent = S.name ? `Питание — ${S.name}` : 'Питание — минилоп';
+    $('#appSub').textContent = S.weight ? `Вес: ${S.weight} г` : 'Добро пожаловать';
+  }
+  function showOnly(...els){
+    ['#step1','#step2','#step3','#mealChoice','#herbsScreen','#journalScreen'].forEach(sel=>$(sel).classList.add('hidden'));
+    els.forEach(el=>el && el.classList.remove('hidden'));
+  }
+
+  function start(){
+    refreshHeader();
+    if(!S.onboarding) showOnly($('#step1'));
+    else { $('#dnLabel').textContent=dailyNorm()||'—'; $('#nameInline3').textContent=S.name||'питомца'; showOnly($('#mealChoice')); }
+    buildHerbs();
+  }
+
+  // Onboarding
+  $('#next1').addEventListener('click', ()=>{
+    const name=($('#petName').value||'').trim(); if(!name) return alert('Введите имя питомца.');
+    S.name=name; save(); $('#nameInline1').textContent=name; showOnly($('#step2'));
+  });
+  $('#calc').addEventListener('click', ()=>{
+    const w=Number($('#weight').value); if(!w||w<=0) return alert('Введите корректный вес (г).');
+    S.weight=Math.round(w); save(); const dn=dailyNorm(); $('#day').textContent=dn; $('#half').textContent=Math.round(dn/2);
+  });
+  $('#next2').addEventListener('click', ()=>{
+    if(!S.weight) return alert('Сначала нажмите «Рассчитать».');
+    $('#nameInline2').textContent=S.name||'питомца';
+    const t=S.targets;
+    ['ca','fiber','protein','p','k','mg','na','fe','va'].forEach(k=>$('#t_'+k).value=t[k]);
+    showOnly($('#step3'));
+  });
+  $('#finish').addEventListener('click', ()=>{
+    const num=id=>Number($(id).value)||0;
+    S.targets={ca:num('#t_ca'), fiber:num('#t_fiber'), protein:num('#t_protein'), p:num('#t_p'), k:num('#t_k'), mg:num('#t_mg'), na:num('#t_na'), fe:num('#t_fe'), va:num('#t_va')};
+    S.onboarding=true; save(); $('#dnLabel').textContent=dailyNorm(); $('#nameInline3').textContent=S.name||'питомца'; showOnly($('#mealChoice'));
+  });
+
+  // Meal selection
+  $$('#mealChoice [data-meal]').forEach(b=> b.addEventListener('click', ()=>{
+    S.meal=b.dataset.meal; save(); showOnly($('#herbsScreen')); $('#result').classList.add('hidden'); $$('.amt').forEach(i=>i.value=0);
+  }));
+
+  function readAmounts(){ const a={}; $$('.amt').forEach(i=>a[i.dataset.name]=Number(i.value)||0); return a; }
+
+  // Ограничение доз
+  function clampToMaxPerMeal(amounts){
+    const out={};
+    for(const n of Object.keys(amounts)){
+      const g=Number(amounts[n])||0; const max=HERBS[n]?.maxPerMeal ?? Infinity;
+      out[n]=Math.max(0, Math.min(g, max));
+      if(out[n]!==g){ const input=rowRefs[n]?.querySelector('.amt'); if(input) input.value=out[n]; }
+    }
+    return out;
+  }
+
+  let lastCalc=null, LAST_PLAN_SIG=null;
+
+  function calc(){
+    if(!S.meal) return alert('Выберите приём: утро или вечер.');
+    const raw=readAmounts(), amounts=clampToMaxPerMeal(raw);
+    const totals=totalsFrom(amounts), target=S.targets, half=0.5;
+    const { ndfPerMealFromGreens } = currentNdfTargets();
+
+    const perc={
+      ca: pct(totals.ca, target.ca*half),
+      fiber: pct(totals.fiber, ndfPerMealFromGreens),
+      protein: pct(totals.protein, target.protein*half),
+      p: pct(totals.p, target.p*half),
+      k: pct(totals.k, target.k*half),
+      mg: pct(totals.mg, target.mg*half),
+      na: pct(totals.na, target.na*half),
+      fe: pct(totals.fe, target.fe*half),
+      va: pct(totals.va, target.va*half)
+    };
+
+    $('#result').classList.remove('hidden');
+    $('#sum').innerHTML = `<div class="tile">Дано: <b>${totals.grams.toFixed(0)} г</b> (лимит: ${mealLimit().toFixed(0)} г). Дневная норма: <b>${dailyNorm()}</b> г.</div>`;
+    $('#bars').innerHTML = [
+      bar('Кальций', totals.ca.toFixed(1),'мг',perc.ca),
+      bar('Клетчатка', totals.fiber.toFixed(1),'г',perc.fiber),
+      bar('Белок', totals.protein.toFixed(1),'г',perc.protein),
+      bar('Фосфор', totals.p.toFixed(1),'мг',perc.p),
+      bar('Калий', totals.k.toFixed(0),'мг',perc.k),
+      bar('Магний', totals.mg.toFixed(0),'мг',perc.mg),
+      bar('Натрий', totals.na.toFixed(0),'мг',perc.na),
+      bar('Железо', totals.fe.toFixed(1),'мг',perc.fe),
+      bar('Витамин A', totals.va.toFixed(0),'мкг',perc.va)
+    ].join('');
+
+    const warn=[];
+    if(perc.fiber<80) warn.push(`<div class="note warnnote">Мало клетчатки: ${totals.fiber.toFixed(1)} г (${perc.fiber}% от цели на этот приём).</div>`);
+    if(perc.ca>130) warn.push(`<div class="note badnote">Избыток кальция (${perc.ca}%). Уменьшите кальциевые (кейл/петрушка и т.п.).</div>`);
+    if(perc.protein>200) warn.push(`<div class="note warnnote">Высокий белок (${perc.protein}%).</div>`);
+    if(totals.grams>mealLimit()+5){
+      const eveningHint = (S.meal==='morning') ? ` Вечером положите не более ${(Math.max(0, dailyNorm()-totals.grams)).toFixed(0)} г.` : '';
+      warn.push(`<div class="note badnote">Перебор по граммам: ${totals.grams.toFixed(0)} г > ${mealLimit().toFixed(0)} г.${eveningHint}</div>`);
+    }
+    if(totals.highOx>=30) warn.push(`<div class="note warnnote">Много оксалатов (мангольд/шпинат/щавель): ${totals.highOx.toFixed(0)} г.</div>`);
+
+    // Индивидуальные предупреждения
+    const doseAlerts=[];
+    for(const [n,g] of Object.entries(amounts)){
+      const h=HERBS[n]; if(!h||!g) continue;
+      if(n==='Мята' && g>10) doseAlerts.push(`Мята >10 г/приём — ограничьте до 5–10 г.`);
+      if(h.highOx && g>20) doseAlerts.push(`${n}: оксалаты — лучше ≤10–20 г.`);
+    }
+    if(doseAlerts.length) warn.push(`<div class="note warnnote">${doseAlerts.map(x=>`<div>• ${x}</div>`).join('')}</div>`);
+    if(!warn.length) warn.push(`<div class="note oknote">✅ Отклонений не обнаружено. Сено и вода — свободный доступ.</div>`);
+    $('#warnings').innerHTML = warn.join('');
+
+    $('#suggestions').innerHTML=''; if(perc.fiber<100) renderFiberSuggestions(amounts, totals);
+    lastCalc={amounts, totals, perc};
+  }
+
+  function renderFiberSuggestions(amounts, totals){
+    const limit=mealLimit();
+    const { ndfPerMealFromGreens } = currentNdfTargets();
+    const fiberNeed = Math.max(0, ndfPerMealFromGreens - totals.fiber);
+    if (fiberNeed<=0) return;
+
+    let gramsBudget = Math.max(0, limit - totals.grams);
+    if (gramsBudget<=0){
+      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note warnnote">⚖ Лимит по граммам выбран. Сократите водянистые/низкоклетчаточные и пересчитайте.</div>`);
+      return;
+    }
+
+    const candidates = Object.keys(HERBS).map(n=>{
+      const h=HERBS[n]; const cap=Math.max(0,(h.maxPerMeal??Infinity)-(amounts[n]||0));
+      return {name:n, cap, fiber100:(h.fiber||0), prio:h.priority??1};
+    }).filter(c=>c.fiber100>=2.5 && c.cap>0).sort((a,b)=> (b.fiber100*b.prio)-(a.fiber100*a.prio));
+
+    if(!candidates.length){
+      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note infonote">ℹ Нет подходящих трав для добавления.</div>`);
+      return;
+    }
+
+    const addRaw=[]; let need=fiberNeed;
+    for(const c of candidates.slice(0,4)){
+      if(need<=0||gramsBudget<=0) break;
+      const gToClose=Math.ceil(need/(c.fiber100/100));
+      const addG=Math.max(0, Math.min(c.cap, gToClose, gramsBudget));
+      if(addG>0){ addRaw.push({name:c.name, grams:addG}); need -= addG*c.fiber100/100; gramsBudget -= addG; }
+    }
+    if(!addRaw.length){
+      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note infonote">ℹ Добавить уже нечего (упираемся в лимиты).</div>`);
+      return;
+    }
+
+    // При нехватке массы — сокращаем самые низкоклетчаточные текущие
+    let stillNeed = Math.max(0, need);
+    let needMoreGrams = stillNeed>0 ? Math.ceil(stillNeed/0.03) : 0;
+    const lowFiberPool = Object.keys(amounts).filter(n=>amounts[n]>0).sort((a,b)=>(HERBS[a].fiber||0)-(HERBS[b].fiber||0));
+    const cutRaw=[];
+    for(const n of lowFiberPool){
+      if(gramsBudget>0 && needMoreGrams<=0) break;
+      if(addRaw.some(a=>a.name===n)) continue;
+      const take = Math.min(amounts[n], Math.max(needMoreGrams,0));
+      if(take>0){ cutRaw.push({name:n, grams:take}); needMoreGrams-=take; gramsBudget+=take; }
+    }
+
+    const net=new Map();
+    for(const a of addRaw) net.set(a.name,(net.get(a.name)||0)+a.grams);
+    for(const c of cutRaw) net.set(c.name,(net.get(c.name)||0)-c.grams);
+    let add=[], cut=[];
+    for(const [name, v] of net.entries()){ if(v>0) add.push({name, grams:v}); if(v<0) cut.push({name, grams:-v}); }
+
+    const project=(base, add, cut)=>{
+      const t={...base};
+      const apply=(name,dg)=>{ const h=HERBS[name]; if(!h||!dg) return;
+        t.grams+=dg;
+        t.ca+= (h.ca||0)*dg/100; t.protein+= (h.protein||0)*dg/100; t.fiber+= (h.fiber||0)*dg/100;
+        t.p+= (h.p||0)*dg/100; t.k+= (h.k||0)*dg/100; t.mg+= (h.mg||0)*dg/100; t.na+= (h.na||0)*dg/100; t.fe+= (h.fe||0)*dg/100; t.va+= (h.va||0)*dg/100;
+      };
+      add.forEach(a=>apply(a.name,a.grams)); cut.forEach(c=>apply(c.name,-c.grams));
+      return t;
+    };
+    const percOf=t=>({
+      "Кальций":pct(t.ca, S.targets.ca/2),
+      "Клетчатка":pct(t.fiber, ndfPerMealFromGreens),
+      "Белок":pct(t.protein, S.targets.protein/2),
+      "Фосфор":pct(t.p, S.targets.p/2),
+      "Калий":pct(t.k, S.targets.k/2),
+      "Магний":pct(t.mg, S.targets.mg/2),
+      "Натрий":pct(t.na, S.targets.na/2),
+      "Железо":pct(t.fe, S.targets.fe/2),
+      "Витамин A":pct(t.va, S.targets.va/2)
+    });
+    const violates=p=>{ for(const [k,lim] of Object.entries(SAFE_UPPER)) if((p[k]||0)>lim) return k; return null; };
+
+    let addTry=JSON.parse(JSON.stringify(add));
+    let cutTry=JSON.parse(JSON.stringify(cut));
+    let guard=0;
+    while(guard++<300){
+      const t2=project(totals,addTry,cutTry), p2=percOf(t2);
+      const bad=violates(p2); const over=(t2.grams - limit); const fiberOk = p2['Клетчатка']>=100;
+      if(!bad && over<=0 && fiberOk) break;
+
+      if(over>0){
+        const moreCuts = Object.keys(amounts).filter(n=>amounts[n]>0 && !addTry.some(a=>a.name===n)).sort((a,b)=>(HERBS[a].fiber||0)-(HERBS[b].fiber||0));
+        let need=Math.ceil(over);
+        for(const n of moreCuts){ if(need<=0) break;
+          const has=(amounts[n]||0)-(cutTry.find(c=>c.name===n)?.grams||0);
+          const take=Math.min(has,need);
+          if(take>0){ const c=cutTry.find(x=>x.name===n); if(c) c.grams+=take; else cutTry.push({name:n, grams:take}); need-=take; }
+        }
+        if(need>0){
+          const idx=addTry.map((a,i)=>({i,d:HERBS[a.name].fiber||0})).sort((x,y)=>y.d-x.d)[0]?.i;
+          if(idx===undefined) break;
+          addTry[idx].grams -= Math.min(addTry[idx].grams, need);
+        }
+        continue;
+      }
+
+      if(bad){
+        const idx=addTry.map((a,i)=>({i,d:HERBS[a.name].fiber||0})).sort((x,y)=>y.d-x.d)[0]?.i;
+        if(idx===undefined) break;
+        if(addTry[idx].grams>0) addTry[idx].grams -= 1;
+        continue;
+      }
+
+      if(!fiberOk){
+        let progressed=false;
+        for(const a of addTry){
+          const cap=Math.max(0, (HERBS[a.name].maxPerMeal ?? Infinity) - ((amounts[a.name]||0)+a.grams));
+          if(cap<=0) continue;
+          a.grams += 1; progressed=true;
+          const pool = Object.keys(amounts).filter(n=>amounts[n]>0 && !addTry.some(x=>x.name===n)).sort((x,y)=>(HERBS[x].fiber||0)-(HERBS[y].fiber||0));
+          let needCut=1;
+          for(const n of pool){ if(needCut<=0) break;
+            const has=(amounts[n]||0)-(cutTry.find(c=>c.name===n)?.grams||0);
+            const take=Math.min(has,needCut);
+            if(take>0){ const c=cutTry.find(x=>x.name===n); if(c) c.grams+=take; else cutTry.push({name:n, grams:take}); needCut-=take; }
+          }
+        }
+        if(!progressed) break;
+      }
+    }
+
+    addTry=addTry.filter(a=>a.grams>0);
+    cutTry=cutTry.filter(c=>c.grams>0);
+
+    const tFinal=project(totals,addTry,cutTry);
+    const pFinal={ fiber: pct(tFinal.fiber, ndfPerMealFromGreens) };
+
+    const sig = JSON.stringify({ add:addTry.slice().sort((a,b)=>a.name.localeCompare(b.name)), cut:cutTry.slice().sort((a,b)=>a.name.localeCompare(b.name)) });
+    if(sig && LAST_PLAN_SIG && sig===LAST_PLAN_SIG){
+      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note infonote">ℹ Больше улучшить нельзя в рамках текущих лимитов.</div>`);
+      return;
+    }
+    if(!addTry.length && pFinal.fiber<100){
+      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note infonote">ℹ Цель по клетчатке недостижима: замените часть низкоклетчаточных на более клетчаточные.</div>`);
+      return;
+    }
+
+    const addTxt = addTry.map(a=>`<b>${a.name}</b> +${a.grams} г`).join(', ');
+    const cutTxt = cutTry.length ? `<ul style="margin:6px 0 0 18px">${cutTry.map(c=>`<li>${c.name} — ${c.grams} г</li>`).join('')}</ul>` : `<div class="muted" style="margin-top:4px">Сокращения не требуются</div>`;
+    $('#suggestions').insertAdjacentHTML('beforeend', `
+      <div class="note infonote">
+        ℹ Мало клетчатки — план: ${addTxt || 'без добавок'}.
+        ${cutTry.length?`<div style="margin-top:6px">Чтобы уложиться в лимит, сократите:</div>${cutTxt}`:''}
+        <div class="muted" style="margin-top:6px">После применения план доведёт клетчатку до цели.</div>
+        <div style="margin-top:8px">
+          <button class="btn info" type="button" data-plan-sig='${sig}' data-apply-plan='${JSON.stringify({add:addTry, remove:cutTry})}'>Применить план</button>
+        </div>
+      </div>`);
+  }
+
+  $('#suggestions').addEventListener('click', (e)=>{
+    const planBtn = e.target.closest('[data-apply-plan]'); if(!planBtn) return;
+    let plan; try{ plan=JSON.parse(planBtn.getAttribute('data-apply-plan')); }catch{ alert('Не удалось применить план.'); return; }
+    const sig = planBtn.getAttribute('data-plan-sig')||null; if(sig) LAST_PLAN_SIG=sig;
+    if(Array.isArray(plan.remove)){ for(const r of plan.remove){ const input=rowRefs[r.name]?.querySelector('.amt'); if(input) input.value = Math.max(0, (+input.value||0)-(Number(r.grams)||0)); } }
+    if(Array.isArray(plan.add)){ for(const a of plan.add){ const input=rowRefs[a.name]?.querySelector('.amt'); if(input) input.value = Math.max(0, (+input.value||0)+(Number(a.grams)||0)); } }
+    calc();
+  });
+
+  function computeDayStatus(dayTotals, dn, targets){
+    const { ndfFromGreensDay } = currentNdfTargets();
+    const p={ fiber:pct(dayTotals.fiber, ndfFromGreensDay), ca:pct(dayTotals.ca, targets.ca), protein:pct(dayTotals.protein, targets.protein), na:pct(dayTotals.na, targets.na), va:pct(dayTotals.va, targets.va) };
+    let status='ok';
+    if(dn && dayTotals.grams < dn*0.9) status='bad';
+    else if (p.fiber<100 || p.ca>130 || p.protein>200 || p.na>120 || p.va>130) status='warn';
+    return {status,p};
+  }
+
+  function showDailySummary(dateStr){
+    const dn=dailyNorm();
+    const recs=S.meals.filter(m=>m.date===dateStr);
+    const t=recs.reduce((acc,m)=>{
+      acc.grams+=m.grams||0;
+      const x=m.totals||{};
+      acc.ca+=x.ca||0; acc.fiber+=x.fiber||0; acc.protein+=x.protein||0; acc.p+=x.p||0; acc.k+=x.k||0; acc.mg+=x.mg||0; acc.na+=x.na||0; acc.fe+=x.fe||0; acc.va+=x.va||0;
+      return acc;
+    }, {grams:0,ca:0,fiber:0,protein:0,p:0,k:0,mg:0,na:0,fe:0,va:0});
+    const {status,p}=computeDayStatus(t,dn,S.targets);
+    const cls = status==='ok' ? 'oknote' : status==='warn' ? 'warnnote' : 'badnote';
+    const label = status==='ok' ? 'Зелёный — всё в норме' : status==='warn' ? 'Оранжевый — элементы' : 'Красный — недобор граммов';
+    const { hayShare, ndfFromGreensDay } = {...currentNdfTargets(), hayShare: S.hayShare};
+    openModal(dateStr===today() ? 'Итог за сегодня' : `Итог за ${dateStr.split('-').reverse().join('.')}`, `
+      <div class="${cls}" style="margin-bottom:10px"><b>${label}</b></div>
+      <div class="kv">
+        <div class="k">Граммы за день</div><div><b>${t.grams.toFixed(0)}</b> / ${dn||'—'} г</div>
+        <div class="k">Клетчатка (зелень)</div><div>${t.fiber.toFixed(1)} г — ${p.fiber}% (цель: ${ndfFromGreensDay.toFixed(1)} г)</div>
+        <div class="k">Кальций</div><div>${t.ca.toFixed(0)} мг — ${p.ca}%</div>
+        <div class="k">Белок</div><div>${t.protein.toFixed(1)} г — ${p.protein}%</div>
+        <div class="k">Натрий</div><div>${t.na.toFixed(0)} мг — ${p.na}%</div>
+        <div class="k">Витамин A</div><div>${t.va.toFixed(0)} мкг — ${p.va}%</div>
+      </div>
+      <div class="note infonote" style="margin-top:10px">
+        Сено и вода — в свободном доступе. ~${Math.round(hayShare*100)}% клетчатки закрывает сено; зеленью добираем остальное.
+      </div>`);
+  }
+
+  function saveCurrentMeal(){
+    if(!lastCalc) return alert('Сначала нажмите «Посчитать».');
+    const entry={ date: today(), meal: S.meal, grams: Math.round(lastCalc.totals.grams), totals: lastCalc.totals, amounts: lastCalc.amounts };
+    S.meals = S.meals.filter(m=> !(m.date===entry.date && m.meal===entry.meal) ); S.meals.push(entry); save();
+    alert('Приём сохранён.'); try{ if(TG?.sendData){ TG.sendData(JSON.stringify({entry})); } }catch{}
+    const todayMeals=S.meals.filter(m=>m.date===today()); const hasMorning=todayMeals.some(m=>m.meal==='morning'); const hasEvening=todayMeals.some(m=>m.meal==='evening'); if(hasMorning&&hasEvening) showDailySummary(today());
+  }
+  $('#saveMeal').addEventListener('click', saveCurrentMeal);
+
+  const modal=$('#modal'), mTitle=$('#modalTitle'), mBody=$('#modalBody');
+  function openModal(title, html){ mTitle.textContent=title; mBody.innerHTML=html; modal.classList.remove('hidden'); document.body.style.overflow='hidden'; }
+  function closeModal(){ modal.classList.add('hidden'); document.body.style.overflow=''; }
+  modal.addEventListener('click', e=>{ if(e.target.dataset.close) closeModal(); });
+
+  function openHerbCard(name){
+    const h=HERBS[name]||{};
+    const img = h.image ? `<img src="${h.image}" alt="" style="width:100%;height:140px;object-fit:cover;border-radius:12px">` : `<div class="imgph" style="height:140px;aspect-ratio:auto">Фото добавляет разработчик</div>`;
+    const table = `
+      <div class="kv" style="margin-top:8px">
+        <div class="k">Кальций</div><div>${h.ca??'—'} мг / 100 г</div>
+        <div class="k">Клетчатка</div><div>${h.fiber??'—'} г / 100 г</div>
+        <div class="k">Белок</div><div>${h.protein??'—'} г / 100 г</div>
+        <div class="k">Фосфор</div><div>${h.p??'—'} мг / 100 г</div>
+        <div class="k">Калий</div><div>${h.k??'—'} мг / 100 г</div>
+        <div class="k">Магний</div><div>${h.mg??'—'} мг / 100 г</div>
+        <div class="k">Натрий</div><div>${h.na??'—'} мг / 100 г</div>
+        <div class="k">Железо</div><div>${h.fe??'—'} мг / 100 г</div>
+        <div class="k">Витамин A</div><div>${h.va??'—'} мкг / 100 г</div>
+      </div>`;
+    openModal(name, `${img}<div style="margin-top:8px">${h.info||''}</div><div style="margin-top:8px">${table}</div>`);
+  }
+
+  // Настройки с долей сена
+  function openSettings(){
+    const dn=dailyNorm(), half=Math.round(dn/2);
+    const hayPct = Math.round((S.hayShare??0.7)*100);
+    openModal('Настройки', `
+      <div class="kv">
+        <div class="k">Имя питомца</div><div><input id="sn" class="n" type="text" value="${S.name||''}"></div>
+        <div class="k">Вес (г)</div><div><input id="sw" class="n" type="number" value="${S.weight||''}"></div>
+      </div>
+      <div class="muted" style="margin-top:6px">Дневная норма: <b>${dn||'—'}</b> г (утро/вечер по <b>${half||'—'}</b> г)</div>
+
+      <div style="margin-top:12px"><b>Клетчатка (NDF)</b></div>
+      <div class="kv" style="margin-top:6px;align-items:center">
+        <div class="k">Доля сена</div>
+        <div>
+          <input id="shay" class="n" type="number" min="60" max="80" step="5" value="${hayPct}"> <span class="muted">% клетчатки закрывает сено</span>
+        </div>
+      </div>
+
+      <div style="margin-top:12px"><b>Нормы (в день)</b></div>
+      <div class="kv" style="margin-top:6px">
+        <div class="k">Кальций (мг)</div><div><input id="sca" class="n" type="number" value="${S.targets.ca}"></div>
+        <div class="k">Клетчатка (г)</div><div><input id="sf" class="n" type="number" value="${S.targets.fiber}"></div>
+        <div class="k">Белок (г)</div><div><input id="spr" class="n" type="number" value="${S.targets.protein}"></div>
+        <div class="k">Фосфор (мг)</div><div><input id="sp" class="n" type="number" value="${S.targets.p}"></div>
+        <div class="k">Калий (мг)</div><div><input id="sk" class="n" type="number" value="${S.targets.k}"></div>
+        <div class="k">Магний (мг)</div><div><input id="smg" class="n" type="number" value="${S.targets.mg}"></div>
+        <div class="k">Натрий (мг)</div><div><input id="sna" class="n" type="number" value="${S.targets.na}"></div>
+        <div class="k">Железо (мг)</div><div><input id="sfe" class="n" type="number" value="${S.targets.fe}"></div>
+        <div class="k">Витамин A (мкг)</div><div><input id="sva" class="n" type="number" value="${S.targets.va}"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="saveSet" class="btn ok w" type="button">Сохранить</button>
+        <button class="btn muted w" data-close="1" type="button">Отмена</button>
+      </div>`);
+
+    $('#saveSet').addEventListener('click', ()=>{
+      const n=($('#sn').value||'').trim(); if(n) S.name=n;
+      const w=Number($('#sw').value); if(w>0) S.weight=Math.round(w);
+      const hayNum = Math.min(80, Math.max(60, Number($('#shay').value)||70)); S.hayShare = hayNum/100;
+      const num=id=>Number($(id).value)||0;
+      S.targets={ ca:num('#sca'), fiber:num('#sf'), protein:num('#spr'), p:num('#sp'), k:num('#sk'), mg:num('#smg'), na:num('#sna'), fe:num('#sfe'), va:num('#sva') };
+      save(); closeModal(); start();
+    });
+  }
+  $('#btnSettings').addEventListener('click', openSettings);
+
+  function buildJournal(){
+    const list=$('#journalList'); if(!list) return;
+    const dn=dailyNorm(), byDate={};
+    for(const m of S.meals) (byDate[m.date] ||= []).push(m);
+    const dates=new Set([today(), ...Object.keys(byDate)]);
+    const ordered=Array.from(dates).sort((a,b)=>b.localeCompare(a)).slice(0,14);
+    const { ndfFromGreensDay } = currentNdfTargets();
+
+    const rows=ordered.map(date=>{
+      const recs=byDate[date]||[];
+      const dayTotals=recs.reduce((acc,m)=>{
+        acc.grams+=m.grams||0;
+        const t=m.totals||{};
+        acc.ca+=t.ca||0; acc.fiber+=t.fiber||0; acc.protein+=t.protein||0; acc.p+=t.p||0; acc.k+=t.k||0; acc.mg+=t.mg||0; acc.na+=t.na||0; acc.fe+=t.fe||0; acc.va+=t.va||0;
+        return acc;
+      }, {grams:0,ca:0,fiber:0,protein:0,p:0,k:0,mg:0,na:0,fe:0,va:0});
+
+      const p = {
+        fiber: pct(dayTotals.fiber, ndfFromGreensDay),
+        ca: pct(dayTotals.ca, S.targets.ca),
+        protein: pct(dayTotals.protein, S.targets.protein),
+        na: pct(dayTotals.na, S.targets.na),
+        va: pct(dayTotals.va, S.targets.va)
+      };
+
+      let status='ok';
+      if(dn && dayTotals.grams < dn*0.9) status='bad';
+      else if(p.fiber<100 || p.ca>130 || p.protein>200 || p.na>120 || p.va>130) status='warn';
+      const colorClass = status==='ok'?'oknote':status==='warn'?'warnnote':'badnote';
+
+      const hasMorning=recs.some(r=>r.meal==='morning');
+      const hasEvening=recs.some(r=>r.meal==='evening');
+      const chips = `
+        <span class="chip" style="background:${hasMorning?'#dcfce7':'#f3f4f6'}">${hasMorning?'Утро ✓':'Утро —'}</span>
+        <span class="chip" style="background:${hasEvening?'#dcfce7':'#f3f4f6'}">${hasEvening?'Вечер ✓':'Вечер —'}</span>`;
+      const dateLabel = (date===today())?'Сегодня':date.split('-').reverse().join('.');
+
+      return `
+        <div class="card" style="margin:8px 0">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <div><b>${dateLabel}</b><div class="muted">${chips}</div></div>
+            <div class="${colorClass}" style="padding:6px 10px;border-radius:10px">
+              ${status==='ok'?'В норме':status==='warn'?'Элементы':'Недобор'}
+            </div>
+          </div>
+          <div class="kv" style="margin-top:8px">
+            <div class="k">Граммы за день</div><div><b>${dayTotals.grams}</b> / ${dn||'—'} г</div>
+            <div class="k">Клетчатка (зелень)</div><div>${dayTotals.fiber.toFixed(1)} г — ${p.fiber}% (цель: ${ndfFromGreensDay.toFixed(1)} г)</div>
+            <div class="k">Кальций</div><div>${dayTotals.ca.toFixed(0)} мг — ${p.ca}%</div>
+            <div class="k">Белок</div><div>${dayTotals.protein.toFixed(1)} г — ${p.protein}%</div>
+            <div class="k">Натрий</div><div>${dayTotals.na.toFixed(0)} мг — ${p.na}%</div>
+            <div class="k">Витамин A</div><div>${dayTotals.va.toFixed(0)} мкг — ${p.va}%</div>
+          </div>
+          <div style="margin-top:8px">
+            <button class="btn muted" type="button" data-summary="${date}">Итог дня</button>
+          </div>
+        </div>`;
+    });
+
+    list.innerHTML = rows.join('') || `<div class="note infonote">Пока нет записей. Сохраните утренний/вечерний приём — они появятся здесь.</div>`;
+    list.querySelectorAll('[data-summary]').forEach(b=> b.addEventListener('click', ()=> showDailySummary(b.getAttribute('data-summary')) ));
+  }
+
+  $$('.nav [data-tab]').forEach(b=> b.addEventListener('click', ()=>{
+    const tab=b.dataset.tab;
+    if(tab==='home') showOnly(S.onboarding?$('#mealChoice'):$('#step1'));
+    if(tab==='journal'){ buildJournal(); showOnly($('#journalScreen')); }
+    if(tab==='settings') openSettings();
+  }));
+
+  try{ load(); start(); }
+  catch(e){
+    const box=document.createElement('div');
+    box.className='card';
+    box.innerHTML = `<div class="note badnote"><b>Ошибка</b><div class="muted" style="margin-top:6px">${(e&&e.message)||e}</div></div>`;
+    document.querySelector('.container')?.prepend(box);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
