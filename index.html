@@ -162,11 +162,16 @@
   const today = () => new Date().toISOString().slice(0,10);
   const TG = window.Telegram?.WebApp; try{TG?.expand?.();TG?.ready?.();}catch{}
 
-  // ===== Базовые (теоретические) суточные цели — от них отнимем вклад сена+воды
-  const BASE_REQUIREMENTS = { ca:960, fiber:20, protein:16, p:400, k:2000, mg:200, na:100, fe:6, va:1500 };
+  // === Новое: средняя целевая потребность Ca с учётом среднего вклада сена (3–5% СВ => 4% как среднее)
+  // Это даёт ~227 мг/кг/сут (например, для 1.585 кг ≈ 360 мг/сут).
+  const CA_MG_PER_KG = 227;
+  const calciumTargetByWeight = (weight_g) => Math.round((Number(weight_g)||0)/1000 * CA_MG_PER_KG);
+
+  // ===== Базовые (теоретические) суточные цели — Ca будет задаваться автоматически по весу
+  const BASE_REQUIREMENTS = { ca:0, fiber:20, protein:16, p:400, k:2000, mg:200, na:100, fe:6, va:1500 };
 
   // ===== Параметры сена и воды (по умолчанию — тимофеевка и умеренно жёсткая вода)
-  // Минералы сена заданы на 1 кг сухого вещества (DM): g/kg для макро, mg/kg для Fe, мкг/кг для VitA (обычно близко к нулю).
+  // Минералы сена заданы на 1 кг сухого вещества (DM): g/kg для макро, mg/kg для Fe, мкг/кг для VitA.
   const HAY_SPEC = {
     name: 'Тимофеевка (тимоти)',
     minerals: { ca_gpk:3.3, p_gpk:2.1, k_gpk:20.2, na_gpk:0.1, mg_gpk:1.5, fe_mgpk:92, va_mcgpk:0 },
@@ -178,10 +183,10 @@
   const S = {
     name:null, weight:null, onboarding:false, meal:null,
     hayShare:0.7,          // доля клетчатки (NDF) от сена
-    hayDMpctBW:4,          // % массы тела (сухое вещество сена) / сутки
+    hayDMpctBW:4,          // % массы тела (сухое вещество сена) / сутки (среднее 3–5%)
     waterMlPerKg:100,      // мл воды / кг / сутки
     waterMinerals:{...DEFAULT_WATER},
-    targets:{...BASE_REQUIREMENTS}, // редактируемые базовые цели
+    targets:{...BASE_REQUIREMENTS}, // редактируемые базовые цели (Ca — авто по весу)
     meals:[]
   };
   function load(){ try{const r=localStorage.getItem('rabbitLite'); if(r) Object.assign(S, JSON.parse(r));}catch{} }
@@ -189,7 +194,7 @@
 
   const SAFE_UPPER = { "Кальций":120, "Витамин A":130, "Белок":180, "Натрий":120 };
 
-  // ====== Список пользователя (для подсветки красным и фразы "высокое содержание кальция")
+  // ====== Список пользователя (для подсветки)
   const USER_REQ_LIST = [
     "Амарант, лист","Базилик","Белокопытник","Бобовые","Брокколи, лист","Брокколи китай","Брокколи рааб","Виноград, лист","Вика, бобовое","Горчица, лист","Горошек","Жеруха (водяной кресс)","Иван-чай","Капуста китайская","Капуста кудрявая","Капуста листовая","Капуста пекинская","Кейл","Кипрей","Клевер","Козлятник","Лапчатка гусиная","Лебеда","Люцерна","Майоран","Мангольд","Марь белая (лебеда)","Морковь ботва","Мята","Одуванчик, лист","Осот","Пастернак","Пастушья сумка","Петрушка","Подорожник","Редька","Редис ботва","Репа, ботва","Розмарин","Руккола","Свёкла, ботва","Тимьян (чабрец)","Укроп","Цикорий","Цикорий листовой (эндивий)","Чертополох","Шалфей","Шпинат","Шпинат горчичный","Шпинат новозеландский","Щавель",
     "Салат Лолло Росса","Салат Лолло бионда","Хурма, лист","Салат Фриллис","Салат Романо"
@@ -198,7 +203,6 @@
 
   // ===== Каталог трав (значения на 100 г) — ПОЛНЫЙ СПИСОК =====
   const HERBS = {
-    // --- Уже были (сохранены) ---
     "Салат Айсберг": {ca:18, protein:0.9, fiber:1.2, p:29, k:141, mg:14, na:10, fe:0.4, va:150, maxPerMeal:100, info:"Водянистый."},
     "Салат латук": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120},
     "Салат римский": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120},
@@ -212,10 +216,7 @@
     "Сельдерей": {ca:44, protein:0.7, fiber:1.6, p:24, k:260, mg:11, na:80, fe:0.2, va:22, maxPerMeal:50},
     "Мята": {ca:220, protein:3.8, fiber:8.0, p:60, k:570, mg:60, na:30, fe:11.0, va:210, maxPerMeal:10, info:"высокое содержание кальция · Эфирные масла — по 5–10 г."},
     "Мангольд": {ca:51, protein:2.0, fiber:1.6, p:35, k:379, mg:81, na:5, fe:1.8, va:611, highOx:true, maxPerMeal:40},
-
     "Одуванчик, лист": {ca:187, protein:2.7, fiber:2.8, p:44, k:397, mg:36, na:7, fe:3.0, va:1000, maxPerMeal:40, info:"высокое содержание кальция"},
-
-    // --- Новые из списка пользователя ---
     "Амарант, лист": {ca:215, protein:2.5, fiber:2.1, p:55, k:611, mg:55, na:20, fe:2.3, va:291, maxPerMeal:40, info:"высокое содержание кальция"},
     "Базилик": {ca:177, protein:2.7, fiber:3.0, p:48, k:295, mg:64, na:4, fe:3.2, va:264, maxPerMeal:20, info:"высокое содержание кальция"},
     "Баклажан, плод": {ca:9, protein:1.0, fiber:3.0, p:24, k:229, mg:14, na:2, fe:0.2, va:23, maxPerMeal:60},
@@ -265,21 +266,12 @@
     "Шпинат горчичный (комацуна)": {ca:210, protein:2.0, fiber:2.0, p:43, k:363, mg:15, na:22, fe:2.0, va:331, maxPerMeal:40, info:"высокое содержание кальция"},
     "Шпинат новозеландский": {ca:58, protein:2.3, fiber:1.5, p:30, k:550, mg:80, na:30, fe:2.7, va:275, highOx:true, maxPerMeal:30},
     "Щавель": {ca:47, protein:2.0, fiber:3.0, p:40, k:334, mg:103, na:4, fe:2.4, va:400, highOx:true, maxPerMeal:20},
-
-    // корректировки ранее заведённых с Ca из списка
     "Брокколи лист (доп.)": {ca:349, protein:3.7, fiber:3.3, p:95, k:325, mg:25, na:40, fe:1.5, va:800, maxPerMeal:35, info:"высокое содержание кальция"},
-
-    // Ранее добавленные по запросу
     "Салат Лолло Росса": {ca:35, protein:1.3, fiber:1.4, p:30, k:240, mg:13, na:10, fe:1.0, va:450, maxPerMeal:120},
     "Салат Лолло бионда": {ca:35, protein:1.3, fiber:1.4, p:30, k:240, mg:13, na:10, fe:1.0, va:450, maxPerMeal:120},
     "Хурма, лист": {ca:100, protein:3.2, fiber:5.0, p:70, k:500, mg:60, na:15, fe:2.0, va:80, maxPerMeal:20, info:"Осторожно: таннины; малыми порциями."},
-
-    // === НОВОЕ: Фриллис и Романо (и синонимы) ===
     "Салат Фриллис": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120, info:"= листовой латук (Frillice)."},
-
     "Салат Романо": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120, info:"= ромэн (равно «Салат римский»)."},
-
-    // Алиасы
     "Кейл": {ca:150, protein:4.3, fiber:4.1, p:92, k:491, mg:47, na:38, fe:1.5, va:681, maxPerMeal:35, info:"= Капуста кудрявая (кейл) · высокое содержание кальция"},
     "Кипрей": {ca:429, protein:4.7, fiber:2.7, p:78, k:494, mg:38, na:12, fe:2.4, va:60, maxPerMeal:30, info:"= Иван-чай (кипрей) · высокое содержание кальция"},
     "Капуста листовая": {ca:232, protein:3.0, fiber:4.0, p:25, k:213, mg:32, na:20, fe:0.5, va:5000, maxPerMeal:35, info:"= Collard · высокое содержание кальция"}
@@ -350,8 +342,7 @@
       na: Math.max(0, (base.na||0) - (hay.na+water.na)),
       fe: Math.max(0, (base.fe||0) - (hay.fe+water.fe)),
       va: Math.max(0, (base.va||0) - (hay.va+water.va)),
-      // Клетчатка считается по NDF отдельно
-      protein: Math.max(0, (base.protein||0)) // при желании можно вычитать ориентир белка из сена
+      protein: Math.max(0, (base.protein||0))
     };
     return res;
   }
@@ -424,6 +415,11 @@
 
   function start(){
     refreshHeader();
+    // Автозадание цели по Ca, если известен вес и цель ещё не задана
+    if(S.weight && (!S.targets.ca || S.targets.ca<=0)) {
+      S.targets.ca = calciumTargetByWeight(S.weight);
+      save();
+    }
     if(!S.onboarding) showOnly($('#step1'));
     else { $('#dnLabel').textContent=dailyNorm()||'—'; $('#nameInline3').textContent=S.name||'питомца'; showOnly($('#mealChoice')); }
     buildHerbs();
@@ -436,7 +432,11 @@
   });
   $('#calc').addEventListener('click', ()=>{
     const w=Number($('#weight').value); if(!w||w<=0) return alert('Введите корректный вес (г).');
-    S.weight=Math.round(w); save(); const dn=dailyNorm(); $('#day').textContent=dn; $('#half').textContent=Math.round(dn/2);
+    S.weight=Math.round(w);
+    // Новое: авто-цель по кальцию от веса (средняя оценка)
+    S.targets.ca = calciumTargetByWeight(S.weight);
+    save();
+    const dn=dailyNorm(); $('#day').textContent=dn; $('#half').textContent=Math.round(dn/2);
   });
   $('#next2').addEventListener('click', ()=>{
     if(!S.weight) return alert('Сначала нажмите «Рассчитать».');
@@ -530,11 +530,11 @@
     if(!warn.length) warn.push(`<div class="note oknote">✅ Отклонений не обнаружено. Сено и вода — свободный доступ.</div>`);
     $('#warnings').innerHTML = warn.join('');
 
-    $('#suggestions').innerHTML=''; // ваш алгоритм предложений можно вернуть при желании
+    $('#suggestions').innerHTML='';
     lastCalc={amounts, totals, perc};
   }
 
-  $('#suggestions').addEventListener('click', (e)=>{/* зарезервировано под «План пополнения клетчатки» */});
+  $('#suggestions').addEventListener('click', (e)=>{});
 
   function computeDayStatus(dayTotals, dn){
     const resDay = residualTargetsDay();
@@ -605,7 +605,7 @@
         <div class="k">Белок</div><div>${h.protein??'—'} г / 100 г</div>
         <div class="k">Фосфор</div><div>${h.p??'—'} мг / 100 г</div>
         <div class="k">Калий</div><div>${h.k??'—'} мг / 100 г</div>
-        <div class="k">Магний</div><div>${h.mg??'—'} мг / 100 г</div>
+        <div class="к">Магний</div><div>${h.mg??'—'} мг / 100 г</div>
         <div class="k">Натрий</div><div>${h.na??'—'} мг / 100 г</div>
         <div class="k">Железо</div><div>${h.fe??'—'} мг / 100 г</div>
         <div class="k">Витамин A</div><div>${h.va??'—'} мкг / 100 г</div>
@@ -613,10 +613,11 @@
     openModal(name, `${img}<div style="margin-top:8px">${h.info||''}</div>${extra}<div style="margin-top:8px">${table}</div>`);
   }
 
-  // Настройки с долей сена + параметры воды/сена
+  // Настройки
   function openSettings(){
     const dn=dailyNorm(), half=Math.round(dn/2);
     const hayPct = Math.round((S.hayShare??0.7)*100);
+    const autoCa = calciumTargetByWeight(S.weight||0);
     openModal('Настройки', `
       <div class="kv">
         <div class="k">Имя питомца</div><div><input id="sn" class="n" type="text" value="${S.name||''}"></div>
@@ -646,7 +647,11 @@
 
       <div style="margin-top:12px"><b>Базовые суточные цели (до вычета)</b></div>
       <div class="kv" style="margin-top:6px">
-        <div class="k">Кальций (мг)</div><div><input id="sca" class="n" type="number" value="${S.targets.ca}"></div>
+        <div class="k">Кальций (мг)</div>
+        <div>
+          <input id="sca" class="n" type="number" value="${S.targets.ca||autoCa}">
+          <div class="muted" style="font-size:12px;margin-top:4px">Авто: ~${autoCa||0} мг (≈ 227 мг/кг/сут)</div>
+        </div>
         <div class="k">Клетчатка (г)</div><div><input id="sf" class="n" type="number" value="${S.targets.fiber}"></div>
         <div class="k">Белок (г)</div><div><input id="spr" class="n" type="number" value="${S.targets.protein}"></div>
         <div class="k">Фосфор (мг)</div><div><input id="sp" class="n" type="number" value="${S.targets.p}"></div>
@@ -677,7 +682,7 @@
       };
 
       const num=id=>Number($(id).value)||0;
-      S.targets={ ca:num('#sca'), fiber:num('#sf'), protein:num('#spr'), p:num('#sp'), k:num('#sk'), mg:num('#smg'), na:num('#sna'), fe:num('#sfe'), va:num('#sva') };
+      S.targets={ ca:num('#sca')||calciumTargetByWeight(S.weight||0), fiber:num('#sf'), protein:num('#spr'), p:num('#sp'), k:num('#sk'), mg:num('#smg'), na:num('#sna'), fe:num('#sfe'), va:num('#sva') };
       save(); closeModal(); start();
     });
   }
@@ -735,7 +740,7 @@
             <div class="k">Кальций (остаток)</div><div>${dayTotals.ca.toFixed(0)} мг — ${p.ca}%</div>
             <div class="k">Белок (остаток)</div><div>${dayTotals.protein.toFixed(1)} г — ${p.protein}%</div>
             <div class="k">Натрий (остаток)</div><div>${dayTotals.na.toFixed(0)} мг — ${p.na}%</div>
-            <div class="k">Витамин A (остаток)</div><div>${dayTotals.va.toFixed(0)} мкг — ${p.va}%</div>
+            <div class="к">Витамин A (остаток)</div><div>${dayTotals.va.toFixed(0)} мкг — ${p.va}%</div>
           </div>
           <div style="margin-top:8px">
             <button class="btn muted" type="button" data-summary="${date}">Итог дня</button>
@@ -766,4 +771,3 @@
 </script>
 </body>
 </html>
-
