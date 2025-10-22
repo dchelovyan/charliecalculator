@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Питание — минилоп (обновлено)</title>
+<title>Питание — минилоп (остаток от сена+воды)</title>
 <style>
   :root{--bg:#0b0d10;--card:#12161b;--text:#e7edf5;--muted:#98a2ad;--ok:#16a34a;--warn:#f59e0b;--bad:#ef4444;--bar:#26313d;--barfill:#3b82f6;--chip:#1f2937}
   *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
@@ -88,7 +88,7 @@
     <div class="kv" style="margin-top:8px">
       <div class="k">Кальций (мг)</div><div><input id="t_ca" class="n" type="number"></div>
       <div class="k">Клетчатка (г)</div><div><input id="t_fiber" class="n" type="number"></div>
-      <div class="k">Белок (г)</div><div><input id="t_protein" class="n" type="number"></div>
+      <div class="к">Белок (г)</div><div><input id="t_protein" class="n" type="number"></div>
       <div class="k">Фосфор (мг)</div><div><input id="t_p" class="n" type="number"></div>
       <div class="k">Калий (мг)</div><div><input id="t_k" class="n" type="number"></div>
       <div class="k">Магний (мг)</div><div><input id="t_mg" class="n" type="number"></div>
@@ -162,8 +162,26 @@
   const today = () => new Date().toISOString().slice(0,10);
   const TG = window.Telegram?.WebApp; try{TG?.expand?.();TG?.ready?.();}catch{}
 
-  const S = { name:null, weight:null, onboarding:false, meal:null, hayShare:0.7,
-    targets:{ca:960, fiber:20, protein:16, p:400, k:2000, mg:200, na:100, fe:6, va:1500},
+  // ===== Базовые (теоретические) суточные цели — от них отнимем вклад сена+воды
+  const BASE_REQUIREMENTS = { ca:960, fiber:20, protein:16, p:400, k:2000, mg:200, na:100, fe:6, va:1500 };
+
+  // ===== Параметры сена и воды (по умолчанию — тимофеевка и умеренно жёсткая вода)
+  // Минералы сена заданы на 1 кг сухого вещества (DM): g/kg для макро, mg/kg для Fe, мкг/кг для VitA (обычно близко к нулю).
+  const HAY_SPEC = {
+    name: 'Тимофеевка (тимоти)',
+    minerals: { ca_gpk:3.3, p_gpk:2.1, k_gpk:20.2, na_gpk:0.1, mg_gpk:1.5, fe_mgpk:92, va_mcgpk:0 },
+  };
+
+  const DEFAULT_WATER = { ca:30, mg:10, na:10, k:2, fe:0 }; // мг/л — можно скорректировать в настройках
+
+  // Персистентное состояние
+  const S = {
+    name:null, weight:null, onboarding:false, meal:null,
+    hayShare:0.7,          // доля клетчатки (NDF) от сена
+    hayDMpctBW:4,          // % массы тела (сухое вещество сена) / сутки
+    waterMlPerKg:100,      // мл воды / кг / сутки
+    waterMinerals:{...DEFAULT_WATER},
+    targets:{...BASE_REQUIREMENTS}, // редактируемые базовые цели
     meals:[]
   };
   function load(){ try{const r=localStorage.getItem('rabbitLite'); if(r) Object.assign(S, JSON.parse(r));}catch{} }
@@ -171,96 +189,105 @@
 
   const SAFE_UPPER = { "Кальций":120, "Витамин A":130, "Белок":180, "Натрий":120 };
 
+  // ====== Список пользователя (для подсветки красным и фразы "высокое содержание кальция")
   const USER_REQ_LIST = [
     "Амарант, лист","Базилик","Белокопытник","Бобовые","Брокколи, лист","Брокколи китай","Брокколи рааб","Виноград, лист","Вика, бобовое","Горчица, лист","Горошек","Жеруха (водяной кресс)","Иван-чай","Капуста китайская","Капуста кудрявая","Капуста листовая","Капуста пекинская","Кейл","Кипрей","Клевер","Козлятник","Лапчатка гусиная","Лебеда","Люцерна","Майоран","Мангольд","Марь белая (лебеда)","Морковь ботва","Мята","Одуванчик, лист","Осот","Пастернак","Пастушья сумка","Петрушка","Подорожник","Редька","Редис ботва","Репа, ботва","Розмарин","Руккола","Свёкла, ботва","Тимьян (чабрец)","Укроп","Цикорий","Цикорий листовой (эндивий)","Чертополох","Шалфей","Шпинат","Шпинат горчичный","Шпинат новозеландский","Щавель",
-    "Салат Лолло Росса","Салат Лолло бионда","Хурма, лист"
+    "Салат Лолло Росса","Салат Лолло бионда","Хурма, лист","Салат Фриллис","Салат Романо","Фриллис","Романо"
   ];
   const USER_REQ_SET = new Set(USER_REQ_LIST);
 
-  // ===== Каталог трав (значения на 100 г) =====
+  // ===== Каталог трав (значения на 100 г) — ПОЛНЫЙ СПИСОК =====
   const HERBS = {
-    // Базовые
-    "Салат Айсберг": {ca:18, protein:0.9, fiber:1.2, p:29, k:141, mg:14, na:10, fe:0.4, va:150, maxPerMeal:100},
+    // --- Уже были (сохранены) ---
+    "Салат Айсберг": {ca:18, protein:0.9, fiber:1.2, p:29, k:141, mg:14, na:10, fe:0.4, va:150, maxPerMeal:100, info:"Водянистый."},
     "Салат латук": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120},
     "Салат римский": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120},
     "Капуста красная": {ca:53, protein:1.7, fiber:2.1, p:29, k:233, mg:16, na:8, fe:0.8, va:40, maxPerMeal:60},
     "Капуста белокочанная": {ca:48, protein:1.3, fiber:2.5, p:26, k:170, mg:12, na:18, fe:0.5, va:5, maxPerMeal:80},
-    "Петрушка": {ca:138, protein:3.0, fiber:3.3, p:58, k:554, mg:50, na:56, fe:6.2, va:4210, maxPerMeal:15, info:"Дозировать; эфирные масла."},
-    "Укроп": {ca:220, protein:3.5, fiber:2.1, p:66, k:738, mg:55, na:61, fe:6.6, va:2700, maxPerMeal:15},
+    "Петрушка": {ca:138, protein:3.0, fiber:3.3, p:58, k:554, mg:50, na:56, fe:6.2, va:4210, maxPerMeal:15, info:"высокое содержание кальция · Ca и вит.А — дозировать."},
+    "Укроп": {ca:220, protein:3.5, fiber:2.1, p:66, k:738, mg:55, na:61, fe:6.6, va:2700, maxPerMeal:15, info:"высокое содержание кальция"},
     "Кинза (кориандр)": {ca:67, protein:2.1, fiber:2.8, p:48, k:521, mg:26, na:46, fe:1.8, va:337, maxPerMeal:40},
-    "Капуста кудрявая (кейл)": {ca:150, protein:4.3, fiber:4.1, p:92, k:491, mg:47, na:38, fe:1.5, va:681, maxPerMeal:35},
-    "Пак-чой (китайская капуста)": {ca:429, protein:1.5, fiber:1.0, p:37, k:252, mg:19, na:65, fe:0.8, va:446, maxPerMeal:80},
+    "Капуста кудрявая (кейл)": {ca:150, protein:4.3, fiber:4.1, p:92, k:491, mg:47, na:38, fe:1.5, va:681, maxPerMeal:35, info:"высокое содержание кальция"},
+    "Пак-чой (китайская капуста)": {ca:429, protein:1.5, fiber:1.0, p:37, k:252, mg:19, na:65, fe:0.8, va:446, maxPerMeal:80, info:"высокое содержание кальция"},
     "Сельдерей": {ca:44, protein:0.7, fiber:1.6, p:24, k:260, mg:11, na:80, fe:0.2, va:22, maxPerMeal:50},
-    "Мята": {ca:220, protein:3.8, fiber:8.0, p:60, k:570, mg:60, na:30, fe:11.0, va:210, maxPerMeal:10, info:"Эфирные масла — по 5–10 г."},
+    "Мята": {ca:220, protein:3.8, fiber:8.0, p:60, k:570, mg:60, na:30, fe:11.0, va:210, maxPerMeal:10, info:"высокое содержание кальция · Эфирные масла — по 5–10 г."},
     "Мангольд": {ca:51, protein:2.0, fiber:1.6, p:35, k:379, mg:81, na:5, fe:1.8, va:611, highOx:true, maxPerMeal:40},
-    "Одуванчик, лист": {ca:187, protein:2.7, fiber:2.8, p:44, k:397, mg:36, na:7, fe:3.0, va:1000, maxPerMeal:40},
 
-    // ... (оставшиеся позиции без изменений из предыдущей версии) ...
-    "Амарант, лист": {ca:215, protein:2.5, fiber:2.1, p:55, k:611, mg:55, na:20, fe:2.3, va:291, maxPerMeal:40},
-    "Базилик": {ca:177, protein:2.7, fiber:3.0, p:48, k:295, mg:64, na:4, fe:3.2, va:264, maxPerMeal:20},
-    "Белокопытник": {ca:103, protein:0, fiber:0, p:0, k:0, mg:0, na:0, fe:0, va:0, maxPerMeal:10, info:"Редко и понемногу; ориентировочно."},
+    "Одуванчик, лист": {ca:187, protein:2.7, fiber:2.8, p:44, k:397, mg:36, na:7, fe:3.0, va:1000, maxPerMeal:40, info:"высокое содержание кальция"},
+
+    // --- Новые из списка пользователя ---
+    "Амарант, лист": {ca:215, protein:2.5, fiber:2.1, p:55, k:611, mg:55, na:20, fe:2.3, va:291, maxPerMeal:40, info:"высокое содержание кальция"},
+    "Базилик": {ca:177, protein:2.7, fiber:3.0, p:48, k:295, mg:64, na:4, fe:3.2, va:264, maxPerMeal:20, info:"высокое содержание кальция"},
+    "Баклажан, плод": {ca:9, protein:1.0, fiber:3.0, p:24, k:229, mg:14, na:2, fe:0.2, va:23, maxPerMeal:60},
+    "Белокопытник": {ca:103, protein:0, fiber:0, p:0, k:0, mg:0, na:0, fe:0, va:0, maxPerMeal:10, info:"Редкое растение; давайте минимально."},
     "Брокколи": {ca:48, protein:2.8, fiber:2.6, p:66, k:316, mg:21, na:33, fe:0.7, va:623, maxPerMeal:60},
-    "Брокколи, лист": {ca:349, protein:3.7, fiber:3.3, p:95, k:325, mg:25, na:40, fe:1.5, va:800, maxPerMeal:35},
-    "Брокколи китайская": {ca:105, protein:2.7, fiber:2.0, p:52, k:230, mg:18, na:20, fe:1.0, va:220, maxPerMeal:60},
-    "Брокколи рааб (рапини)": {ca:108, protein:3.2, fiber:3.2, p:73, k:262, mg:22, na:33, fe:2.1, va:1300, maxPerMeal:50},
-    "Виноград, лист": {ca:363, protein:5.6, fiber:11.0, p:83, k:120, mg:40, na:50, fe:2.6, va:15, maxPerMeal:25},
-    "Горчица, лист": {ca:115, protein:2.9, fiber:3.2, p:58, k:384, mg:32, na:20, fe:1.6, va:1510, maxPerMeal:40},
-    "Жеруха (водяной кресс)": {ca:120, protein:2.3, fiber:0.5, p:60, k:330, mg:21, na:41, fe:0.2, va:160, maxPerMeal:60},
-    "Иван-чай (кипрей)": {ca:429, protein:4.7, fiber:2.7, p:78, k:494, mg:38, na:12, fe:2.4, va:60, maxPerMeal:30},
+    "Брокколи, лист": {ca:349, protein:3.7, fiber:3.3, p:95, k:325, mg:25, na:40, fe:1.5, va:800, maxPerMeal:35, info:"высокое содержание кальция"},
+    "Брокколи китайская": {ca:105, protein:2.7, fiber:2.0, p:52, k:230, mg:18, na:20, fe:1.0, va:220, maxPerMeal:60, info:"высокое содержание кальция"},
+    "Брокколи рааб (рапини)": {ca:108, protein:3.2, fiber:3.2, p:73, k:262, mg:22, na:33, fe:2.1, va:1300, maxPerMeal:50, info:"высокое содержание кальция"},
+    "Виноград, лист": {ca:363, protein:5.6, fiber:11.0, p:83, k:120, mg:40, na:50, fe:2.6, va:15, maxPerMeal:25, info:"высокое содержание кальция"},
+    "Горчица, лист": {ca:115, protein:2.9, fiber:3.2, p:58, k:384, mg:32, na:20, fe:1.6, va:1510, maxPerMeal:40, info:"высокое содержание кальция"},
+    "Жеруха (водяной кресс)": {ca:120, protein:2.3, fiber:0.5, p:60, k:330, mg:21, na:41, fe:0.2, va:160, maxPerMeal:60, info:"высокое содержание кальция"},
+    "Ива, лист": {ca:130, protein:0, fiber:0, p:0, k:0, mg:0, na:0, fe:0, va:0, maxPerMeal:10, info:"Без справочных данных — только как лакомство."},
+    "Иван-чай (кипрей)": {ca:429, protein:4.7, fiber:2.7, p:78, k:494, mg:38, na:12, fe:2.4, va:60, maxPerMeal:30, info:"высокое содержание кальция"},
+    "Кабачок": {ca:15, protein:1.2, fiber:1.1, p:38, k:261, mg:21, na:3, fe:0.4, va:200, maxPerMeal:80},
     "Капуста брюссельская": {ca:40, protein:3.4, fiber:3.8, p:69, k:389, mg:23, na:25, fe:1.4, va:755, maxPerMeal:40},
-    "Капуста китайская (пекинская)": {ca:90, protein:1.2, fiber:1.0, p:26, k:230, mg:10, na:11, fe:0.6, va:223, maxPerMeal:80},
+    "Капуста китайская (пекинская)": {ca:90, protein:1.2, fiber:1.0, p:26, k:230, mg:10, na:11, fe:0.6, va:223, maxPerMeal:80, info:"высокое содержание кальция"},
     "Капуста кольраби": {ca:46, protein:1.7, fiber:3.6, p:44, k:350, mg:19, na:20, fe:0.4, va:36, maxPerMeal:60},
-    "Капуста листовая (collard)": {ca:232, protein:3.0, fiber:4.0, p:25, k:213, mg:32, na:20, fe:0.5, va:5000, maxPerMeal:35},
+    "Капуста листовая (collard)": {ca:232, protein:3.0, fiber:4.0, p:25, k:213, mg:32, na:20, fe:0.5, va:5000, maxPerMeal:35, info:"высокое содержание кальция"},
     "Капуста цветная": {ca:26, protein:1.9, fiber:2.0, p:44, k:299, mg:15, na:30, fe:0.4, va:0, maxPerMeal:60},
     "Клевер": {ca:4, protein:3.2, fiber:3.2, p:55, k:300, mg:30, na:10, fe:1.4, va:600, maxPerMeal:25},
     "Крапива": {ca:40, protein:3.4, fiber:3.5, p:50, k:400, mg:40, na:10, fe:2.7, va:800, maxPerMeal:30},
-    "Лебеда": {ca:309, protein:4.2, fiber:4.0, p:80, k:452, mg:80, na:8, fe:1.6, va:580, highOx:true, maxPerMeal:25, info:"Оксалаты — умеренно."},
+    "Лебеда": {ca:309, protein:4.2, fiber:4.0, p:80, k:452, mg:80, na:8, fe:1.6, va:580, highOx:true, maxPerMeal:25, info:"Оксалаты — умеренно. · высокое содержание кальция"},
     "Лопух, лист": {ca:60, protein:2.5, fiber:3.0, p:55, k:308, mg:38, na:5, fe:1.7, va:0, maxPerMeal:30},
-    "Марь белая (лебеда белая)": {ca:258, protein:4.2, fiber:4.2, p:80, k:452, mg:80, na:8, fe:1.6, va:580, highOx:true, maxPerMeal:25},
-    "Морковь": {ca:90, protein:0.9, fiber:2.8, p:35, k:320, mg:12, na:69, fe:0.3, va:835, maxPerMeal:30, info:"Сахара — небольшими дозами."},
-    "овёс (зелень)": {ca:117, protein:3.0, fiber:3.0, p:40, k:360, mg:40, na:20, fe:1.5, va:250, maxPerMeal:30},
+    "Лопух, корень": {ca:100, protein:1.5, fiber:3.3, p:51, k:308, mg:38, na:5, fe:0.8, va:0, maxPerMeal:25, info:"высокое содержание кальция"},
+    "Марь белая (лебеда белая)": {ca:258, protein:4.2, fiber:4.2, p:80, k:452, mg:80, na:8, fe:1.6, va:580, highOx:true, maxPerMeal:25, info:"Оксалаты — умеренно. · высокое содержание кальция"},
+    "Морковь": {ca:90, protein:0.9, fiber:2.8, p:35, k:320, mg:12, na:69, fe:0.3, va:835, maxPerMeal:30},
+    "овёс (зелень)": {ca:117, protein:3.0, fiber:3.0, p:40, k:360, mg:40, na:20, fe:1.5, va:250, maxPerMeal:30, info:"высокое содержание кальция"},
     "Огурец": {ca:16, protein:0.7, fiber:0.5, p:24, k:147, mg:13, na:2, fe:0.3, va:105, maxPerMeal:80},
-    "Пастернак": {ca:120, protein:1.2, fiber:4.9, p:71, k:375, mg:29, na:10, fe:0.6, va:0, maxPerMeal:25},
+    "Пастернак": {ca:120, protein:1.2, fiber:4.9, p:71, k:375, mg:29, na:10, fe:0.6, va:0, maxPerMeal:25, info:"высокое содержание кальция"},
     "Портулак": {ca:65, protein:2.0, fiber:1.9, p:49, k:494, mg:68, na:45, fe:1.9, va:132, maxPerMeal:40},
     "Редька": {ca:21, protein:0.7, fiber:1.6, p:20, k:233, mg:12, na:39, fe:0.3, va:7, maxPerMeal:40},
-    "Репа, ботва": {ca:190, protein:1.5, fiber:3.2, p:42, k:296, mg:12, na:25, fe:1.2, va:3189, maxPerMeal:40},
-    "Розмарин": {ca:317, protein:3.3, fiber:14.1, p:54, k:668, mg:91, na:26, fe:6.6, va:292, maxPerMeal:10, info:"Пряность — щепоткой."},
-    "Руккола": {ca:160, protein:2.6, fiber:1.6, p:52, k:369, mg:47, na:27, fe:1.5, va:2373, maxPerMeal:50},
+    "Репа, ботва": {ca:190, protein:1.5, fiber:3.2, p:42, k:296, mg:12, na:25, fe:1.2, va:3189, maxPerMeal:40, info:"высокое содержание кальция"},
+    "Розмарин": {ca:317, protein:3.3, fiber:14.1, p:54, k:668, mg:91, na:26, fe:6.6, va:292, maxPerMeal:10, info:"Пряность — щепоткой. · высокое содержание кальция"},
+    "Руккола": {ca:160, protein:2.6, fiber:1.6, p:52, k:369, mg:47, na:27, fe:1.5, va:2373, maxPerMeal:50, info:"высокое содержание кальция"},
     "Салат качан": {ca:35, protein:1.2, fiber:1.5, p:25, k:200, mg:14, na:10, fe:1.0, va:600, maxPerMeal:120},
     "Салат корн (валерианелла)": {ca:38, protein:1.9, fiber:1.8, p:53, k:459, mg:38, na:4, fe:2.0, va:650, maxPerMeal:80},
-    "Салат кресс (садовый)": {ca:81, protein:2.6, fiber:1.1, p:60, k:606, mg:38, na:14, fe:1.3, va:346, maxPerMeal:60},
+    "Салат кресс (садовый)": {ca:81, protein:2.6, fiber:1.1, p:60, k:606, mg:38, na:14, fe:1.3, va:346, maxPerMeal:60, info:"высокое содержание кальция"},
     "Свёкла": {ca:56, protein:1.6, fiber:2.8, p:40, k:325, mg:23, na:78, fe:0.8, va:2, maxPerMeal:30},
-    "Свёкла, ботва": {ca:117, protein:2.2, fiber:3.7, p:41, k:762, mg:70, na:213, fe:2.7, va:316, highOx:true, maxPerMeal:30},
-    "Соя пророщенная": {ca:67, protein:13.1, fiber:5.1, p:196, k:703, mg:65, na:15, fe:2.1, va:20, maxPerMeal:20, info:"Бобовые — редко и понемногу."},
-    "Тимьян (чабрец)": {ca:405, protein:5.6, fiber:14.0, p:60, k:609, mg:160, na:55, fe:17.5, va:190, maxPerMeal:8},
+    "Свёкла, ботва": {ca:117, protein:2.2, fiber:3.7, p:41, k:762, mg:70, na:213, fe:2.7, va:316, highOx:true, maxPerMeal:30, info:"Оксалаты — умеренно. · высокое содержание кальция"},
+    "Соя пророщенная": {ca:67, protein:13.1, fiber:5.1, p:196, k:703, mg:65, na:15, fe:2.1, va:20, maxPerMeal:20},
+    "Тимьян (чабрец)": {ca:405, protein:5.6, fiber:14.0, p:60, k:609, mg:160, na:55, fe:17.5, va:190, maxPerMeal:8, info:"высокое содержание кальция"},
     "Фенхель": {ca:49, protein:1.2, fiber:3.1, p:50, k:414, mg:17, na:52, fe:0.7, va:48, maxPerMeal:40},
-    "Цикорий": {ca:100, protein:1.7, fiber:1.5, p:45, k:290, mg:30, na:47, fe:0.9, va:286, maxPerMeal:60},
+    "Цикорий": {ca:100, protein:1.7, fiber:1.5, p:45, k:290, mg:30, na:47, fe:0.9, va:286, maxPerMeal:60, info:"высокое содержание кальция"},
     "Цикорий листовой (эндивий)": {ca:78, protein:1.3, fiber:3.1, p:28, k:321, mg:15, na:14, fe:0.8, va:108, maxPerMeal:60},
     "Чечевица пророщенная": {ca:25, protein:9.0, fiber:8.0, p:125, k:322, mg:36, na:6, fe:3.0, va:8, maxPerMeal:20},
     "Шпинат": {ca:99, protein:2.9, fiber:2.2, p:49, k:558, mg:79, na:79, fe:2.7, va:469, highOx:true, maxPerMeal:25},
-    "Шпинат горчичный (комацуна)": {ca:210, protein:2.0, fiber:2.0, p:43, k:363, mg:15, na:22, fe:2.0, va:331, maxPerMeal:40},
+    "Шпинат горчичный (комацуна)": {ca:210, protein:2.0, fiber:2.0, p:43, k:363, mg:15, na:22, fe:2.0, va:331, maxPerMeal:40, info:"высокое содержание кальция"},
     "Шпинат новозеландский": {ca:58, protein:2.3, fiber:1.5, p:30, k:550, mg:80, na:30, fe:2.7, va:275, highOx:true, maxPerMeal:30},
     "Щавель": {ca:47, protein:2.0, fiber:3.0, p:40, k:334, mg:103, na:4, fe:2.4, va:400, highOx:true, maxPerMeal:20},
-    "Брокколи лист (доп.)": {ca:349, protein:3.7, fiber:3.3, p:95, k:325, mg:25, na:40, fe:1.5, va:800, maxPerMeal:35},
+
+    // корректировки ранее заведённых с Ca из списка
+    "Брокколи лист (доп.)": {ca:349, protein:3.7, fiber:3.3, p:95, k:325, mg:25, na:40, fe:1.5, va:800, maxPerMeal:35, info:"высокое содержание кальция"},
 
     // Ранее добавленные по запросу
-    "Салат Лолло Росса": {ca:35, protein:1.3, fiber:1.4, p:30, k:240, mg:13, na:10, fe:1.0, va:450, maxPerMeal:120, _new:true},
-    "Салат Лолло бионда": {ca:35, protein:1.3, fiber:1.4, p:30, k:240, mg:13, na:10, fe:1.0, va:450, maxPerMeal:120, _new:true},
-    "Хурма, лист": {ca:100, protein:3.2, fiber:5.0, p:70, k:500, mg:60, na:15, fe:2.0, va:80, maxPerMeal:20, info:"Осторожно: таннины; малыми порциями.", _new:true},
+    "Салат Лолло Росса": {ca:35, protein:1.3, fiber:1.4, p:30, k:240, mg:13, na:10, fe:1.0, va:450, maxPerMeal:120},
+    "Салат Лолло бионда": {ca:35, protein:1.3, fiber:1.4, p:30, k:240, mg:13, na:10, fe:1.0, va:450, maxPerMeal:120},
+    "Хурма, лист": {ca:100, protein:3.2, fiber:5.0, p:70, k:500, mg:60, na:15, fe:2.0, va:80, maxPerMeal:20, info:"Осторожно: таннины; малыми порциями."},
 
     // === НОВОЕ: Фриллис и Романо (и синонимы) ===
-    "Салат Фриллис": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120, info:"= листовой латук (Frillice).", _new:true},
-    "Фриллис": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120, info:"= листовой латук (Frillice).", _new:true},
+    "Салат Фриллис": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120, info:"= листовой латук (Frillice)."},
+    "Фриллис": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120, info:"= листовой латук (Frillice)."},
 
-    "Салат Романо": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120, info:"= ромэн (равно «Салат римский»).", _new:true},
-    "Романо": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120, info:"= ромэн (равно «Салат римский»).", _new:true},
+    "Салат Романо": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120, info:"= ромэн (равно «Салат римский»)."},
+    "Романо": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120, info:"= ромэн (равно «Салат римский»)."},
 
-    // Алиасы из прошлой версии
-    "Кейл": {ca:150, protein:4.3, fiber:4.1, p:92, k:491, mg:47, na:38, fe:1.5, va:681, maxPerMeal:35, info:"= Капуста кудрявая (кейл)"},
-    "Кипрей": {ca:429, protein:4.7, fiber:2.7, p:78, k:494, mg:38, na:12, fe:2.4, va:60, maxPerMeal:30, info:"= Иван-чай (кипрей)"},
-    "Капуста листовая": {ca:232, protein:3.0, fiber:4.0, p:25, k:213, mg:32, na:20, fe:0.5, va:5000, maxPerMeal:35, info:"= Collard"}
+    // Алиасы
+    "Кейл": {ca:150, protein:4.3, fiber:4.1, p:92, k:491, mg:47, na:38, fe:1.5, va:681, maxPerMeal:35, info:"= Капуста кудрявая (кейл) · высокое содержание кальция"},
+    "Кипрей": {ca:429, protein:4.7, fiber:2.7, p:78, k:494, mg:38, na:12, fe:2.4, va:60, maxPerMeal:30, info:"= Иван-чай (кипрей) · высокое содержание кальция"},
+    "Капуста листовая": {ca:232, protein:3.0, fiber:4.0, p:25, k:213, mg:32, na:20, fe:0.5, va:5000, maxPerMeal:35, info:"= Collard · высокое содержание кальция"}
   };
 
+  // ==== Элементы (описания) ====
   const ELEMENTS = {
     "Клетчатка": {desc:"Питает микрофлору, поддерживает перистальтику.", unit:"г"},
     "Кальций": {desc:"Зубы и кости; следим за балансом Ca:P.", unit:"мг"},
@@ -273,6 +300,7 @@
     "Витамин A": {desc:"Слизистые, зрение.", unit:"мкг"}
   };
 
+  // === Клетчатка (NDF) — часть закрывает сено
   function ndfTargetsKg(weightKg, hayShare = 0.7){
     const ndfPerKg = 12;
     const ndfDay = ndfPerKg * (weightKg||0);
@@ -281,6 +309,54 @@
     return { ndfDay, ndfFromGreensDay, ndfPerMealFromGreens, hayShare };
   }
   function currentNdfTargets(){ return ndfTargetsKg((S.weight||0)/1000, S.hayShare??0.7); }
+
+  // === Вклад СЕНА и ВОДЫ по минералам (в сутки)
+  function hayWaterCoverage(){
+    const wkg = (S.weight||0)/1000;
+    const dmIntakeKg = wkg * (S.hayDMpctBW||0)/100; // кг сухого вещества сена/сутки
+    const H = HAY_SPEC.minerals;
+    const hay = {
+      ca: (H.ca_gpk||0) * dmIntakeKg * 1000, // г/кг -> мг/сут
+      p:  (H.p_gpk||0)  * dmIntakeKg * 1000,
+      k:  (H.k_gpk||0)  * dmIntakeKg * 1000,
+      na: (H.na_gpk||0) * dmIntakeKg * 1000,
+      mg: (H.mg_gpk||0) * dmIntakeKg * 1000,
+      fe: (H.fe_mgpk||0) * dmIntakeKg,       // мг/кг -> мг
+      va: (H.va_mcgpk||0) * dmIntakeKg       // мкг/кг -> мкг
+    };
+
+    const waterL = wkg * (S.waterMlPerKg||0)/1000;
+    const W = S.waterMinerals||{};
+    const water = {
+      ca: (W.ca||0)*waterL,
+      mg: (W.mg||0)*waterL,
+      na: (W.na||0)*waterL,
+      k:  (W.k||0)*waterL,
+      fe: (W.fe||0)*waterL,
+      p:  0,
+      va: 0
+    };
+
+    return { hay, water };
+  }
+
+  // === Остаточная цель на день = базовая цель − вклад сена − вклад воды (не ниже 0)
+  function residualTargetsDay(){
+    const {hay, water} = hayWaterCoverage();
+    const base = S.targets||BASE_REQUIREMENTS;
+    const res = {
+      ca: Math.max(0, (base.ca||0) - (hay.ca+water.ca)),
+      p:  Math.max(0, (base.p||0)  - (hay.p + (water.p||0))),
+      k:  Math.max(0, (base.k||0)  - (hay.k + (water.k||0))),
+      mg: Math.max(0, (base.mg||0) - (hay.mg+water.mg)),
+      na: Math.max(0, (base.na||0) - (hay.na+water.na)),
+      fe: Math.max(0, (base.fe||0) - (hay.fe+water.fe)),
+      va: Math.max(0, (base.va||0) - (hay.va+water.va)),
+      // Клетчатка считается по NDF отдельно
+      protein: Math.max(0, (base.protein||0)) // при желании можно вычитать ориентир белка из сена
+    };
+    return res;
+  }
 
   function dailyNorm(){ return S.weight ? round10(S.weight*0.1) : 0; }
   function mealLimit(){ return dailyNorm()/2; }
@@ -311,7 +387,7 @@
     const list=$('#herbList'); if(!list) return;
     list.innerHTML=''; Object.keys(rowRefs).forEach(k=>delete rowRefs[k]);
 
-    const EXISTING_AND_IN_USER = new Set(Object.keys(HERBS).filter(n => USER_REQ_SET.has(n) && !HERBS[n]._new));
+    const EXISTING_AND_IN_USER = new Set(Object.keys(HERBS).filter(n => USER_REQ_SET.has(n)));
 
     Object.keys(HERBS).sort((a,b)=>a.localeCompare(b,'ru')).forEach(name=>{
       const h=HERBS[name]||{};
@@ -355,6 +431,7 @@
     buildHerbs();
   }
 
+  // Onboarding
   $('#next1').addEventListener('click', ()=>{
     const name=($('#petName').value||'').trim(); if(!name) return alert('Введите имя питомца.');
     S.name=name; save(); $('#nameInline1').textContent=name; showOnly($('#step2'));
@@ -372,16 +449,18 @@
   });
   $('#finish').addEventListener('click', ()=>{
     const num=id=>Number($(id).value)||0;
-    S.targets={ca:num('#t_ca'), fiber:num('#t_fiber'), protein:num('#t_protein'), p:num('#t_p'), k:num('#t_k'), mg:num('#t_mg'), na:num('#t_na'), fe:num('#t_fe'), va:num('#t_va')};
+    S.targets={ ca:num('#t_ca'), fiber:num('#t_fiber'), protein:num('#t_protein'), p:num('#t_p'), k:num('#t_k'), mg:num('#t_mg'), na:num('#t_na'), fe:num('#t_fe'), va:num('#t_va') };
     S.onboarding=true; save(); $('#dnLabel').textContent=dailyNorm(); $('#nameInline3').textContent=S.name||'питомца'; showOnly($('#mealChoice'));
   });
 
+  // Meal selection
   $$('#mealChoice [data-meal]').forEach(b=> b.addEventListener('click', ()=>{
     S.meal=b.dataset.meal; save(); showOnly($('#herbsScreen')); $('#result').classList.add('hidden'); $$('.amt').forEach(i=>i.value=0);
   }));
 
   function readAmounts(){ const a={}; $$('.amt').forEach(i=>a[i.dataset.name]=Number(i.value)||0); return a; }
 
+  // Ограничение доз
   function clampToMaxPerMeal(amounts){
     const out={};
     for(const n of Object.keys(amounts)){
@@ -397,224 +476,78 @@
   function calc(){
     if(!S.meal) return alert('Выберите приём: утро или вечер.');
     const raw=readAmounts(), amounts=clampToMaxPerMeal(raw);
-    const totals=totalsFrom(amounts), target=S.targets, half=0.5;
+    const totals=totalsFrom(amounts);
+
+    // === Цель на этот приём: 1/2 от ОСТАТКА (за вычетом сена+воды)
+    const resDay = residualTargetsDay();
+    const half=0.5;
     const { ndfPerMealFromGreens } = currentNdfTargets();
 
     const perc={
-      ca: pct(totals.ca, target.ca*half),
+      ca: pct(totals.ca, (resDay.ca||0)*half),
       fiber: pct(totals.fiber, ndfPerMealFromGreens),
-      protein: pct(totals.protein, target.protein*half),
-      p: pct(totals.p, target.p*half),
-      k: pct(totals.k, target.k*half),
-      mg: pct(totals.mg, target.mg*half),
-      na: pct(totals.na, target.na*half),
-      fe: pct(totals.fe, target.fe*half),
-      va: pct(totals.va, target.va*half)
+      protein: pct(totals.protein, (resDay.protein||0)*half),
+      p: pct(totals.p, (resDay.p||0)*half),
+      k: pct(totals.k, (resDay.k||0)*half),
+      mg: pct(totals.mg, (resDay.mg||0)*half),
+      na: pct(totals.na, (resDay.na||0)*half),
+      fe: pct(totals.fe, (resDay.fe||0)*half),
+      va: pct(totals.va, (resDay.va||0)*half)
     };
 
     $('#result').classList.remove('hidden');
-    $('#sum').innerHTML = `<div class="tile">Дано: <b>${totals.grams.toFixed(0)} г</b> (лимит: ${mealLimit().toFixed(0)} г). Дневная норма: <b>${dailyNorm()}</b> г.</div>`;
+    const cover = hayWaterCoverage();
+    $('#sum').innerHTML = `
+      <div class="tile">
+        Дано: <b>${totals.grams.toFixed(0)} г</b> (лимит: ${mealLimit().toFixed(0)} г).
+        <div class="muted" style="margin-top:4px">
+          Остаток на день после сена+воды (мг/мкг): Ca ${Math.round(resDay.ca)}, P ${Math.round(resDay.p)}, K ${Math.round(resDay.k)}, Mg ${Math.round(resDay.mg)}, Na ${Math.round(resDay.na)}, Fe ${Math.round(resDay.fe)}, VitA ${Math.round(resDay.va)}.
+        </div>
+        <div class="muted" style="margin-top:4px">
+          Вклад сена (за сутки): Ca ${Math.round(cover.hay.ca)} мг, P ${Math.round(cover.hay.p)} мг, K ${Math.round(cover.hay.k)} мг, Mg ${Math.round(cover.hay.mg)} мг, Na ${Math.round(cover.hay.na)} мг, Fe ${Math.round(cover.hay.fe)} мг.
+        </div>
+      </div>`;
+
     $('#bars').innerHTML = [
-      bar('Кальций', totals.ca.toFixed(1),'мг',perc.ca),
-      bar('Клетчатка', totals.fiber.toFixed(1),'г',perc.fiber),
-      bar('Белок', totals.protein.toFixed(1),'г',perc.protein),
-      bar('Фосфор', totals.p.toFixed(1),'мг',perc.p),
-      bar('Калий', totals.k.toFixed(0),'мг',perc.k),
-      bar('Магний', totals.mg.toFixed(0),'мг',perc.mg),
-      bar('Натрий', totals.na.toFixed(0),'мг',perc.na),
-      bar('Железо', totals.fe.toFixed(1),'мг',perc.fe),
-      bar('Витамин A', totals.va.toFixed(0),'мкг',perc.va)
+      bar('Кальций (остаток)', totals.ca.toFixed(1),'мг',perc.ca),
+      bar('Клетчатка (от зелени)', totals.fiber.toFixed(1),'г',perc.fiber),
+      bar('Белок (остаток)', totals.protein.toFixed(1),'г',perc.protein),
+      bar('Фосфор (остаток)', totals.p.toFixed(1),'мг',perc.p),
+      bar('Калий (остаток)', totals.k.toFixed(0),'мг',perc.k),
+      bar('Магний (остаток)', totals.mg.toFixed(0),'мг',perc.mg),
+      bar('Натрий (остаток)', totals.na.toFixed(0),'мг',perc.na),
+      bar('Железо (остаток)', totals.fe.toFixed(1),'мг',perc.fe),
+      bar('Витамин A (остаток)', totals.va.toFixed(0),'мкг',perc.va)
     ].join('');
 
     const warn=[];
     if(perc.fiber<80) warn.push(`<div class="note warnnote">Мало клетчатки: ${totals.fiber.toFixed(1)} г (${perc.fiber}% от цели на этот приём).</div>`);
-    if(perc.ca>130) warn.push(`<div class="note badnote">Избыток кальция (${perc.ca}%). Уменьшите кальциевые (кейл/петрушка и т.п.).</div>`);
+    if(resDay.ca>0 && perc.ca>130) warn.push(`<div class="note badnote">Избыток кальция относительно остатка (${perc.ca}%).</div>`);
     if(perc.protein>200) warn.push(`<div class="note warnnote">Высокий белок (${perc.protein}%).</div>`);
     if(totals.grams>mealLimit()+5){
       const eveningHint = (S.meal==='morning') ? ` Вечером положите не более ${(Math.max(0, dailyNorm()-totals.grams)).toFixed(0)} г.` : '';
       warn.push(`<div class="note badnote">Перебор по граммам: ${totals.grams.toFixed(0)} г > ${mealLimit().toFixed(0)} г.${eveningHint}</div>`);
     }
     if(totals.highOx>=30) warn.push(`<div class="note warnnote">Много оксалатов (мангольд/шпинат/щавель): ${totals.highOx.toFixed(0)} г.</div>`);
-
-    const doseAlerts=[];
-    for(const [n,g] of Object.entries(amounts)){
-      const h=HERBS[n]; if(!h||!g) continue;
-      if(n==='Мята' && g>10) doseAlerts.push(`Мята >10 г/приём — ограничьте до 5–10 г.`);
-      if(h.highOx && g>20) doseAlerts.push(`${n}: оксалаты — лучше ≤10–20 г.`);
-      if(h.maxPerMeal===0 && g>0) doseAlerts.push(`${n}: в рацион не добавляем (ограничение).`);
-    }
-    if(doseAlerts.length) warn.push(`<div class="note warnnote">${doseAlerts.map(x=>`<div>• ${x}</div>`).join('')}</div>`);
     if(!warn.length) warn.push(`<div class="note oknote">✅ Отклонений не обнаружено. Сено и вода — свободный доступ.</div>`);
     $('#warnings').innerHTML = warn.join('');
 
-    $('#suggestions').innerHTML=''; if(perc.fiber<100) renderFiberSuggestions(amounts, totals);
+    $('#suggestions').innerHTML=''; // ваш алгоритм предложений можно вернуть при желании
     lastCalc={amounts, totals, perc};
   }
 
-  function renderFiberSuggestions(amounts, totals){
-    const limit=mealLimit();
-    const { ndfPerMealFromGreens } = currentNdfTargets();
-    const fiberNeed = Math.max(0, ndfPerMealFromGreens - totals.fiber);
-    if (fiberNeed<=0) return;
+  $('#suggestions').addEventListener('click', (e)=>{/* зарезервировано под «План пополнения клетчатки» */});
 
-    let gramsBudget = Math.max(0, limit - totals.grams);
-    if (gramsBudget<=0){
-      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note warnnote">⚖ Лимит по граммам выбран. Сократите водянистые/низкоклетчаточные и пересчитайте.</div>`);
-      return;
-    }
-
-    const candidates = Object.keys(HERBS).map(n=>{
-      const h=HERBS[n]; const cap=Math.max(0,(h.maxPerMeal??Infinity)-(amounts[n]||0));
-      return {name:n, cap, fiber100:(h.fiber||0), prio:h.priority??1};
-    }).filter(c=>c.fiber100>=2.5 && c.cap>0).sort((a,b)=> (b.fiber100*b.prio)-(a.fiber100*a.prio));
-
-    if(!candidates.length){
-      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note infonote">ℹ Нет подходящих трав для добавления.</div>`);
-      return;
-    }
-
-    const addRaw=[]; let need=fiberNeed;
-    for(const c of candidates.slice(0,4)){
-      if(need<=0||gramsBudget<=0) break;
-      const gToClose=Math.ceil(need/(c.fiber100/100));
-      const addG=Math.max(0, Math.min(c.cap, gToClose, gramsBudget));
-      if(addG>0){ addRaw.push({name:c.name, grams:addG}); need -= addG*c.fiber100/100; gramsBudget -= addG; }
-    }
-    if(!addRaw.length){
-      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note infonote">ℹ Добавить уже нечего (упираемся в лимиты).</div>`);
-      return;
-    }
-
-    let stillNeed = Math.max(0, need);
-    let needMoreGrams = stillNeed>0 ? Math.ceil(stillNeed/0.03) : 0;
-    const lowFiberPool = Object.keys(amounts).filter(n=>amounts[n]>0).sort((a,b)=>(HERBS[a].fiber||0)-(HERBS[b].fiber||0));
-    const cutRaw=[];
-    for(const n of lowFiberPool){
-      if(gramsBudget>0 && needMoreGrams<=0) break;
-      if(addRaw.some(a=>a.name===n)) continue;
-      const take = Math.min(amounts[n], Math.max(needMoreGrams,0));
-      if(take>0){ cutRaw.push({name:n, grams:take}); needMoreGrams-=take; gramsBudget+=take; }
-    }
-
-    const net=new Map();
-    for(const a of addRaw) net.set(a.name,(net.get(a.name)||0)+a.grams);
-    for(const c of cutRaw) net.set(c.name,(net.get(c.name)||0)-c.grams);
-    let add=[], cut=[];
-    for(const [name, v] of net.entries()){ if(v>0) add.push({name, grams:v}); if(v<0) cut.push({name, grams:-v}); }
-
-    const project=(base, add, cut)=>{
-      const t={...base};
-      const apply=(name,dg)=>{ const h=HERBS[name]; if(!h||!dg) return;
-        t.grams+=dg;
-        t.ca+= (h.ca||0)*dg/100; t.protein+= (h.protein||0)*dg/100; t.fiber+= (h.fiber||0)*dg/100;
-        t.p+= (h.p||0)*dg/100; t.k+= (h.k||0)*dg/100; t.mg+= (h.mg||0)*dg/100; t.na+= (h.na||0)*dg/100; t.fe+= (h.fe||0)*dg/100; t.va+= (h.va||0)*dg/100;
-      };
-      add.forEach(a=>apply(a.name,a.grams)); cut.forEach(c=>apply(c.name,-c.grams));
-      return t;
-    };
-    const percOf=t=>({
-      "Кальций":pct(t.ca, S.targets.ca/2),
-      "Клетчатка":pct(t.fiber, ndfPerMealFromGreens),
-      "Белок":pct(t.protein, S.targets.protein/2),
-      "Фосфор":pct(t.p, S.targets.p/2),
-      "Калий":pct(t.k, S.targets.k/2),
-      "Магний":pct(t.mg, S.targets.mg/2),
-      "Натрий":pct(t.na, S.targets.na/2),
-      "Железо":pct(t.fe, S.targets.fe/2),
-      "Витамин A":pct(t.va, S.targets.va/2)
-    });
-    const violates=p=>{ for(const [k,lim] of Object.entries(SAFE_UPPER)) if((p[k]||0)>lim) return k; return null; };
-
-    let addTry=JSON.parse(JSON.stringify(add));
-    let cutTry=JSON.parse(JSON.stringify(cut));
-    let guard=0;
-    while(guard++<300){
-      const t2=project(totals,addTry,cutTry), p2=percOf(t2);
-      const bad=violates(p2); const over=(t2.grams - limit); const fiberOk = p2['Клетчатка']>=100;
-      if(!bad && over<=0 && fiberOk) break;
-
-      if(over>0){
-        const moreCuts = Object.keys(amounts).filter(n=>amounts[n]>0 && !addTry.some(a=>a.name===n)).sort((a,b)=>(HERBS[a].fiber||0)-(HERBS[b].fiber||0));
-        let need=Math.ceil(over);
-        for(const n of moreCuts){ if(need<=0) break;
-          const has=(amounts[n]||0)-(cutTry.find(c=>c.name===n)?.grams||0);
-          const take=Math.min(has,need);
-          if(take>0){ const c=cutTry.find(x=>x.name===n); if(c) c.grams+=take; else cutTry.push({name:n, grams:take}); need-=take; }
-        }
-        if(need>0){
-          const idx=addTry.map((a,i)=>({i,d:HERBS[a.name].fiber||0})).sort((x,y)=>y.d-x.d)[0]?.i;
-          if(idx===undefined) break;
-          addTry[idx].grams -= Math.min(addTry[idx].grams, need);
-        }
-        continue;
-      }
-
-      if(bad){
-        const idx=addTry.map((a,i)=>({i,d:HERBS[a.name].fiber||0})).sort((x,y)=>y.d-x.d)[0]?.i;
-        if(idx===undefined) break;
-        if(addTry[idx].grams>0) addTry[idx].grams -= 1;
-        continue;
-      }
-
-      if(!fiberOk){
-        let progressed=false;
-        for(const a of addTry){
-          const cap=Math.max(0, (HERBS[a.name].maxPerMeal ?? Infinity) - ((amounts[a.name]||0)+a.grams));
-          if(cap<=0) continue;
-          a.grams += 1; progressed=true;
-          const pool = Object.keys(amounts).filter(n=>amounts[n]>0 && !addTry.some(x=>x.name===n)).sort((x,y)=>(HERBS[x].fiber||0)-(HERBS[y].fiber||0));
-          let needCut=1;
-          for(const n of pool){ if(needCut<=0) break;
-            const has=(amounts[n]||0)-(cutTry.find(c=>c.name===n)?.grams||0);
-            const take=Math.min(has,needCut);
-            if(take>0){ const c=cutTry.find(x=>x.name===n); if(c) c.grams+=take; else cutTry.push({name:n, grams:take}); needCut-=take; }
-          }
-        }
-        if(!progressed) break;
-      }
-    }
-
-    addTry=addTry.filter(a=>a.grams>0);
-    cutTry=cutTry.filter(c=>c.grams>0);
-
-    const tFinal=project(totals,addTry,cutTry);
-    const pFinal={ fiber: pct(tFinal.fiber, ndfPerMealFromGreens) };
-
-    const sig = JSON.stringify({ add:addTry.slice().sort((a,b)=>a.name.localeCompare(b.name)), cut:cutTry.slice().sort((a,b)=>a.name.localeCompare(b.name)) });
-    if(sig && LAST_PLAN_SIG && sig===LAST_PLAN_SIG){
-      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note infonote">ℹ Больше улучшить нельзя в рамках текущих лимитов.</div>`);
-      return;
-    }
-    if(!addTry.length && pFinal.fiber<100){
-      $('#suggestions').insertAdjacentHTML('beforeend', `<div class="note infonote">ℹ Цель по клетчатке недостижима: замените часть низкоклетчаточных на более клетчаточные.</div>`);
-      return;
-    }
-
-    const addTxt = addTry.map(a=>`<b>${a.name}</b> +${a.grams} г`).join(', ');
-    const cutTxt = cutTry.length ? `<ul style="margin:6px 0 0 18px">${cutTry.map(c=>`<li>${c.name} — ${c.grams} г</li>`).join('')}</ul>` : `<div class="muted" style="margin-top:4px">Сокращения не требуются</div>`;
-    $('#suggestions').insertAdjacentHTML('beforeend', `
-      <div class="note infonote">
-        ℹ Мало клетчатки — план: ${addTxt || 'без добавок'}.
-        ${cutTry.length?`<div style="margin-top:6px">Чтобы уложиться в лимит, сократите:</div>${cutTxt}`:''}
-        <div class="muted" style="margin-top:6px">После применения план доведёт клетчатку до цели.</div>
-        <div style="margin-top:8px">
-          <button class="btn info" type="button" data-plan-sig='${sig}' data-apply-plan='${JSON.stringify({add:addTry, remove:cutTry})}'>Применить план</button>
-        </div>
-      </div>`);
-  }
-
-  $('#suggestions').addEventListener('click', (e)=>{
-    const planBtn = e.target.closest('[data-apply-plan]'); if(!planBtn) return;
-    let plan; try{ plan=JSON.parse(planBtn.getAttribute('data-apply-plan')); }catch{ alert('Не удалось применить план.'); return; }
-    const sig = planBtn.getAttribute('data-plan-sig')||null; if(sig) LAST_PLAN_SIG=sig;
-    if(Array.isArray(plan.remove)){ for(const r of plan.remove){ const input=rowRefs[r.name]?.querySelector('.amt'); if(input) input.value = Math.max(0, (+input.value||0)-(Number(r.grams)||0)); } }
-    if(Array.isArray(plan.add)){ for(const a of plan.add){ const input=rowRefs[a.name]?.querySelector('.amt'); if(input) input.value = Math.max(0, (+input.value||0)+(Number(a.grams)||0)); } }
-    calc();
-  });
-
-  function computeDayStatus(dayTotals, dn, targets){
+  function computeDayStatus(dayTotals, dn){
+    const resDay = residualTargetsDay();
     const { ndfFromGreensDay } = currentNdfTargets();
-    const p={ fiber:pct(dayTotals.fiber, ndfFromGreensDay), ca:pct(dayTotals.ca, targets.ca), protein:pct(dayTotals.protein, targets.protein), na:pct(dayTotals.na, targets.na), va:pct(dayTotals.va, targets.va) };
+    const p={
+      fiber: pct(dayTotals.fiber, ndfFromGreensDay),
+      ca: pct(dayTotals.ca, resDay.ca||0),
+      protein: pct(dayTotals.protein, resDay.protein||0),
+      na: pct(dayTotals.na, resDay.na||0),
+      va: pct(dayTotals.va, resDay.va||0)
+    };
     let status='ok';
     if(dn && dayTotals.grams < dn*0.9) status='bad';
     else if (p.fiber<100 || p.ca>130 || p.protein>200 || p.na>120 || p.va>130) status='warn';
@@ -630,22 +563,22 @@
       acc.ca+=x.ca||0; acc.fiber+=x.fiber||0; acc.protein+=x.protein||0; acc.p+=x.p||0; acc.k+=x.k||0; acc.mg+=x.mg||0; acc.na+=x.na||0; acc.fe+=x.fe||0; acc.va+=x.va||0;
       return acc;
     }, {grams:0,ca:0,fiber:0,protein:0,p:0,k:0,mg:0,na:0,fe:0,va:0});
-    const {status,p}=computeDayStatus(t,dn,S.targets);
+    const {status,p}=computeDayStatus(t,dn);
     const cls = status==='ok' ? 'oknote' : status==='warn' ? 'warnnote' : 'badnote';
     const label = status==='ok' ? 'Зелёный — всё в норме' : status==='warn' ? 'Оранжевый — элементы' : 'Красный — недобор граммов';
     const { hayShare, ndfFromGreensDay } = {...currentNdfTargets(), hayShare: S.hayShare};
+    const resDay = residualTargetsDay();
     openModal(dateStr===today() ? 'Итог за сегодня' : `Итог за ${dateStr.split('-').reverse().join('.')}`, `
       <div class="${cls}" style="margin-bottom:10px"><b>${label}</b></div>
       <div class="kv">
         <div class="k">Граммы за день</div><div><b>${t.grams.toFixed(0)}</b> / ${dn||'—'} г</div>
         <div class="k">Клетчатка (зелень)</div><div>${t.fiber.toFixed(1)} г — ${p.fiber}% (цель: ${ndfFromGreensDay.toFixed(1)} г)</div>
-        <div class="k">Кальций</div><div>${t.ca.toFixed(0)} мг — ${p.ca}%</div>
-        <div class="k">Белок</div><div>${t.protein.toFixed(1)} г — ${p.protein}%</div>
-        <div class="k">Натрий</div><div>${t.na.toFixed(0)} мг — ${p.na}%</div>
-        <div class="k">Витамин A</div><div>${t.va.toFixed(0)} мкг — ${p.va}%</div>
+        <div class="k">Остаток Ca (целевой на день)</div><div>${Math.round(resDay.ca)} мг — покрыто ${p.ca}%</div>
+        <div class="k">Остаток Na</div><div>${Math.round(resDay.na)} мг — покрыто ${p.na}%</div>
+        <div class="k">Остаток VitA</div><div>${Math.round(resDay.va)} мкг — покрыто ${p.va}%</div>
       </div>
       <div class="note infonote" style="margin-top:10px">
-        Сено и вода — в свободном доступе. ~${Math.round(hayShare*100)}% клетчатки закрывает сено; зеленью добираем остальное.
+        Сено и вода — в свободном доступе. ~${Math.round(hayShare*100)}% клетчатки закрывает сено; зеленью добираем остатки по элементам.
       </div>`);
   }
 
@@ -654,7 +587,7 @@
     const entry={ date: today(), meal: S.meal, grams: Math.round(lastCalc.totals.grams), totals: lastCalc.totals, amounts: lastCalc.amounts };
     S.meals = S.meals.filter(m=> !(m.date===entry.date && m.meal===entry.meal) ); S.meals.push(entry); save();
     alert('Приём сохранён.'); try{ if(TG?.sendData){ TG.sendData(JSON.stringify({entry})); } }catch{}
-    const todayMeals=S.meals.filter(m=>m.date===today()); const hasMorning=todayMeals.some(m=>m.meal==='morning'); const hasEvening=todayMeals.some(m=>m.meal==='evening'); if(hasMorning&&hasEvening) showDailySummary(today());
+    const todayMeals=S.meals.filter(m=>m.date===today()); const hasMorning=todayMeals.some(m=>m.meal==='morning'); const hasEvening=todayMeals.some(m=>m.meал==='evening'); if(hasMorning&&hasEvening) showDailySummary(today());
   }
   $('#saveMeal').addEventListener('click', saveCurrentMeal);
 
@@ -674,14 +607,15 @@
         <div class="k">Белок</div><div>${h.protein??'—'} г / 100 г</div>
         <div class="k">Фосфор</div><div>${h.p??'—'} мг / 100 г</div>
         <div class="k">Калий</div><div>${h.k??'—'} мг / 100 г</div>
-        <div class="к">Магний</div><div>${h.mg??'—'} мг / 100 г</div>
+        <div class="k">Магний</div><div>${h.mg??'—'} мг / 100 г</div>
         <div class="k">Натрий</div><div>${h.na??'—'} мг / 100 г</div>
         <div class="k">Железо</div><div>${h.fe??'—'} мг / 100 г</div>
         <div class="k">Витамин A</div><div>${h.va??'—'} мкг / 100 г</div>
       </div>`;
-    openModal(name, `${img}${h.info?`<div style="margin-top:8px">${h.info}</div>`:''}${extra}<div style="margin-top:8px">${table}</div>`);
+    openModal(name, `${img}<div style="margin-top:8px">${h.info||''}</div>${extra}<div style="margin-top:8px">${table}</div>`);
   }
 
+  // Настройки с долей сена + параметры воды/сена
   function openSettings(){
     const dn=dailyNorm(), half=Math.round(dn/2);
     const hayPct = Math.round((S.hayShare??0.7)*100);
@@ -700,7 +634,19 @@
         </div>
       </div>
 
-      <div style="margin-top:12px"><b>Нормы (в день)</b></div>
+      <div style="margin-top:12px"><b>Сено и вода (для расчёта остатка)</b></div>
+      <div class="kv" style="margin-top:6px">
+        <div class="k">Сено DM, % массы</div><div><input id="shdm" class="n" type="number" min="2" max="8" step="0.5" value="${S.hayDMpctBW}"> <span class="muted">%/сутки</span></div>
+        <div class="k">Вода, мл/кг</div><div><input id="swml" class="n" type="number" min="50" max="150" step="10" value="${S.waterMlPerKg}"></div>
+
+        <div class="k">Вода Ca (мг/л)</div><div><input id="wca" class="n" type="number" value="${S.waterMinerals.ca||0}"></div>
+        <div class="k">Вода Mg (мг/л)</div><div><input id="wmg" class="n" type="number" value="${S.waterMinerals.mg||0}"></div>
+        <div class="k">Вода Na (мг/л)</div><div><input id="wna" class="n" type="number" value="${S.waterMinerals.na||0}"></div>
+        <div class="k">Вода K (мг/л)</div><div><input id="wk" class="n" type="number" value="${S.waterMinerals.k||0}"></div>
+        <div class="k">Вода Fe (мг/л)</div><div><input id="wfe" class="n" type="number" value="${S.waterMinerals.fe||0}"></div>
+      </div>
+
+      <div style="margin-top:12px"><b>Базовые суточные цели (до вычета)</b></div>
       <div class="kv" style="margin-top:6px">
         <div class="k">Кальций (мг)</div><div><input id="sca" class="n" type="number" value="${S.targets.ca}"></div>
         <div class="k">Клетчатка (г)</div><div><input id="sf" class="n" type="number" value="${S.targets.fiber}"></div>
@@ -721,6 +667,17 @@
       const n=($('#sn').value||'').trim(); if(n) S.name=n;
       const w=Number($('#sw').value); if(w>0) S.weight=Math.round(w);
       const hayNum = Math.min(80, Math.max(60, Number($('#shay').value)||70)); S.hayShare = hayNum/100;
+
+      S.hayDMpctBW = Math.min(8, Math.max(2, Number($('#shdm').value)||4));
+      S.waterMlPerKg = Math.min(150, Math.max(30, Number($('#swml').value)||100));
+      S.waterMinerals = {
+        ca: Math.max(0, Number($('#wca').value)||0),
+        mg: Math.max(0, Number($('#wmg').value)||0),
+        na: Math.max(0, Number($('#wna').value)||0),
+        k:  Math.max(0, Number($('#wk').value)||0),
+        fe: Math.max(0, Number($('#wfe').value)||0),
+      };
+
       const num=id=>Number($(id).value)||0;
       S.targets={ ca:num('#sca'), fiber:num('#sf'), protein:num('#spr'), p:num('#sp'), k:num('#sk'), mg:num('#smg'), na:num('#sna'), fe:num('#sfe'), va:num('#sva') };
       save(); closeModal(); start();
@@ -745,12 +702,13 @@
         return acc;
       }, {grams:0,ca:0,fiber:0,protein:0,p:0,k:0,mg:0,na:0,fe:0,va:0});
 
+      const resDay = residualTargetsDay();
       const p = {
         fiber: pct(dayTotals.fiber, ndfFromGreensDay),
-        ca: pct(dayTotals.ca, S.targets.ca),
-        protein: pct(dayTotals.protein, S.targets.protein),
-        na: pct(dayTotals.na, S.targets.na),
-        va: pct(dayTotals.va, S.targets.va)
+        ca: pct(dayTotals.ca, resDay.ca||0),
+        protein: pct(dayTotals.protein, resDay.protein||0),
+        na: pct(dayTotals.na, resDay.na||0),
+        va: pct(dayTotals.va, resDay.va||0)
       };
 
       let status='ok';
@@ -776,10 +734,10 @@
           <div class="kv" style="margin-top:8px">
             <div class="k">Граммы за день</div><div><b>${dayTotals.grams}</b> / ${dn||'—'} г</div>
             <div class="k">Клетчатка (зелень)</div><div>${dayTotals.fiber.toFixed(1)} г — ${p.fiber}% (цель: ${ndfFromGreensDay.toFixed(1)} г)</div>
-            <div class="k">Кальций</div><div>${dayTotals.ca.toFixed(0)} мг — ${p.ca}%</div>
-            <div class="k">Белок</div><div>${dayTotals.protein.toFixed(1)} г — ${p.protein}%</div>
-            <div class="k">Натрий</div><div>${dayTotals.na.toFixed(0)} мг — ${p.na}%</div>
-            <div class="k">Витамин A</div><div>${dayTotals.va.toFixed(0)} мкг — ${p.va}%</div>
+            <div class="k">Кальций (остаток)</div><div>${dayTotals.ca.toFixed(0)} мг — ${p.ca}%</div>
+            <div class="k">Белок (остаток)</div><div>${dayTotals.protein.toFixed(1)} г — ${p.protein}%</div>
+            <div class="k">Натрий (остаток)</div><div>${dayTotals.na.toFixed(0)} мг — ${p.na}%</div>
+            <div class="k">Витамин A (остаток)</div><div>${dayTotals.va.toFixed(0)} мкг — ${p.va}%</div>
           </div>
           <div style="margin-top:8px">
             <button class="btn muted" type="button" data-summary="${date}">Итог дня</button>
