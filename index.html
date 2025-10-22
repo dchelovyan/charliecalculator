@@ -162,7 +162,6 @@
   const today = () => new Date().toISOString().slice(0,10);
   const TG = window.Telegram?.WebApp; try{TG?.expand?.();TG?.ready?.();}catch{}
 
-  // Персистентное состояние
   const S = { name:null, weight:null, onboarding:false, meal:null, hayShare:0.7,
     targets:{ca:960, fiber:20, protein:16, p:400, k:2000, mg:200, na:100, fe:6, va:1500},
     meals:[]
@@ -172,18 +171,15 @@
 
   const SAFE_UPPER = { "Кальций":120, "Витамин A":130, "Белок":180, "Натрий":120 };
 
-  // ===== Список пользователя (для выделения) =====
   const USER_REQ_LIST = [
     "Амарант, лист","Базилик","Белокопытник","Бобовые","Брокколи, лист","Брокколи китай","Брокколи рааб","Виноград, лист","Вика, бобовое","Горчица, лист","Горошек","Жеруха (водяной кресс)","Иван-чай","Капуста китайская","Капуста кудрявая","Капуста листовая","Капуста пекинская","Кейл","Кипрей","Клевер","Козлятник","Лапчатка гусиная","Лебеда","Люцерна","Майоран","Мангольд","Марь белая (лебеда)","Морковь ботва","Мята","Одуванчик, лист","Осот","Пастернак","Пастушья сумка","Петрушка","Подорожник","Редька","Редис ботва","Репа, ботва","Розмарин","Руккола","Свёкла, ботва","Тимьян (чабрец)","Укроп","Цикорий","Цикорий листовой (эндивий)","Чертополох","Шалфей","Шпинат","Шпинат горчичный","Шпинат новозеландский","Щавель",
-    // плюс просили отдельно разобрать:
     "Салат Лолло Росса","Салат Лолло бионда","Хурма, лист"
   ];
   const USER_REQ_SET = new Set(USER_REQ_LIST);
 
   // ===== Каталог трав (значения на 100 г) =====
-  // Для сложных/редких растений добавлены консервативные лимиты и комментарии.
   const HERBS = {
-    // --- Были ранее ---
+    // Базовые
     "Салат Айсберг": {ca:18, protein:0.9, fiber:1.2, p:29, k:141, mg:14, na:10, fe:0.4, va:150, maxPerMeal:100},
     "Салат латук": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120},
     "Салат римский": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120},
@@ -198,6 +194,8 @@
     "Мята": {ca:220, protein:3.8, fiber:8.0, p:60, k:570, mg:60, na:30, fe:11.0, va:210, maxPerMeal:10, info:"Эфирные масла — по 5–10 г."},
     "Мангольд": {ca:51, protein:2.0, fiber:1.6, p:35, k:379, mg:81, na:5, fe:1.8, va:611, highOx:true, maxPerMeal:40},
     "Одуванчик, лист": {ca:187, protein:2.7, fiber:2.8, p:44, k:397, mg:36, na:7, fe:3.0, va:1000, maxPerMeal:40},
+
+    // ... (оставшиеся позиции без изменений из предыдущей версии) ...
     "Амарант, лист": {ca:215, protein:2.5, fiber:2.1, p:55, k:611, mg:55, na:20, fe:2.3, va:291, maxPerMeal:40},
     "Базилик": {ca:177, protein:2.7, fiber:3.0, p:48, k:295, mg:64, na:4, fe:3.2, va:264, maxPerMeal:20},
     "Белокопытник": {ca:103, protein:0, fiber:0, p:0, k:0, mg:0, na:0, fe:0, va:0, maxPerMeal:10, info:"Редко и понемногу; ориентировочно."},
@@ -245,31 +243,24 @@
     "Щавель": {ca:47, protein:2.0, fiber:3.0, p:40, k:334, mg:103, na:4, fe:2.4, va:400, highOx:true, maxPerMeal:20},
     "Брокколи лист (доп.)": {ca:349, protein:3.7, fiber:3.3, p:95, k:325, mg:25, na:40, fe:1.5, va:800, maxPerMeal:35},
 
-    // --- Новые по запросу (помечены _new:true) ---
+    // Ранее добавленные по запросу
     "Салат Лолло Росса": {ca:35, protein:1.3, fiber:1.4, p:30, k:240, mg:13, na:10, fe:1.0, va:450, maxPerMeal:120, _new:true},
     "Салат Лолло бионда": {ca:35, protein:1.3, fiber:1.4, p:30, k:240, mg:13, na:10, fe:1.0, va:450, maxPerMeal:120, _new:true},
-    "Хурма, лист": {ca:100, protein:3.2, fiber:5.0, p:70, k:500, mg:60, na:15, fe:2.0, va:80, maxPerMeal:20, info:"Осторожно: терпены/таннины; небольшими порциями.", _new:true},
+    "Хурма, лист": {ca:100, protein:3.2, fiber:5.0, p:70, k:500, mg:60, na:15, fe:2.0, va:80, maxPerMeal:20, info:"Осторожно: таннины; малыми порциями.", _new:true},
 
-    "Вика, бобовое": {ca:40, protein:5.0, fiber:5.0, p:90, k:350, mg:35, na:5, fe:1.8, va:10, maxPerMeal:0, info:"Не рекомендуется (риск фитотоксинов).", _new:true},
-    "Горошек": {ca:25, protein:5.4, fiber:5.1, p:108, k:244, mg:33, na:5, fe:1.5, va:38, maxPerMeal:15, info:"Сладковат; понемногу.", _new:true},
-    "Козлятник": {ca:120, protein:3.0, fiber:3.0, p:60, k:300, mg:40, na:10, fe:1.5, va:50, maxPerMeal:0, info:"Козлятник аптечный — не давать (алкалоиды).", _new:true},
-    "Лапчатка гусиная": {ca:80, protein:2.5, fiber:3.0, p:50, k:350, mg:30, na:10, fe:1.2, va:60, maxPerMeal:25, _new:true},
-    "Люцерна": {ca:285, protein:4.0, fiber:3.0, p:70, k:370, mg:30, na:15, fe:1.8, va:250, maxPerMeal:15, info:"Очень кальциевая — как добавка.", _new:true},
-    "Майоран": {ca:199, protein:3.2, fiber:12.0, p:60, k:356, mg:80, na:10, fe:7.0, va:300, maxPerMeal:6, info:"Пряность — щепоткой.", _new:true},
-    "Морковь ботва": {ca:320, protein:2.0, fiber:2.8, p:60, k:400, mg:40, na:50, fe:2.0, va:900, maxPerMeal:25, info:"Кальций высокий.", _new:true},
-    "Осот": {ca:220, protein:2.7, fiber:3.0, p:65, k:420, mg:50, na:12, fe:2.2, va:150, maxPerMeal:40, _new:true},
-    "Пастушья сумка": {ca:120, protein:2.6, fiber:2.5, p:50, k:300, mg:25, na:10, fe:1.3, va:100, maxPerMeal:25, _new:true},
-    "Подорожник": {ca:65, protein:2.0, fiber:2.5, p:45, k:300, mg:25, na:8, fe:1.1, va:100, maxPerMeal:40, _new:true},
-    "Редис ботва": {ca:260, protein:2.0, fiber:3.6, p:60, k:300, mg:50, na:90, fe:2.5, va:700, maxPerMeal:25, _new:true},
-    "Чертополох": {ca:120, protein:2.0, fiber:3.5, p:55, k:350, mg:40, na:12, fe:1.5, va:120, maxPerMeal:25, info:"Молодые листья; без колючек.", _new:true},
-    "Шалфей": {ca:165, protein:3.3, fiber:11.0, p:57, k:428, mg:70, na:11, fe:5.0, va:295, maxPerMeal:6, info:"Пряность — очень мало.", _new:true},
-    // Алиасы для удобства поиска
-    "Кейл": {ca:150, protein:4.3, fiber:4.1, p:92, k:491, mg:47, na:38, fe:1.5, va:681, maxPerMeal:35, info:"= Капуста кудрявая (кейл)", _new:true},
-    "Кипрей": {ca:429, protein:4.7, fiber:2.7, p:78, k:494, mg:38, na:12, fe:2.4, va:60, maxPerMeal:30, info:"= Иван-чай (кипрей)", _new:true},
-    "Капуста листовая": {ca:232, protein:3.0, fiber:4.0, p:25, k:213, mg:32, na:20, fe:0.5, va:5000, maxPerMeal:35, info:"= Collard", _new:true}
+    // === НОВОЕ: Фриллис и Романо (и синонимы) ===
+    "Салат Фриллис": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120, info:"= листовой латук (Frillice).", _new:true},
+    "Фриллис": {ca:36, protein:1.4, fiber:1.3, p:22, k:194, mg:13, na:10, fe:0.9, va:740, maxPerMeal:120, info:"= листовой латук (Frillice).", _new:true},
+
+    "Салат Романо": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120, info:"= ромэн (равно «Салат римский»).", _new:true},
+    "Романо": {ca:33, protein:1.2, fiber:1.6, p:25, k:247, mg:12, na:8, fe:1.2, va:871, maxPerMeal:120, info:"= ромэн (равно «Салат римский»).", _new:true},
+
+    // Алиасы из прошлой версии
+    "Кейл": {ca:150, protein:4.3, fiber:4.1, p:92, k:491, mg:47, na:38, fe:1.5, va:681, maxPerMeal:35, info:"= Капуста кудрявая (кейл)"},
+    "Кипрей": {ca:429, protein:4.7, fiber:2.7, p:78, k:494, mg:38, na:12, fe:2.4, va:60, maxPerMeal:30, info:"= Иван-чай (кипрей)"},
+    "Капуста листовая": {ca:232, protein:3.0, fiber:4.0, p:25, k:213, mg:32, na:20, fe:0.5, va:5000, maxPerMeal:35, info:"= Collard"}
   };
 
-  // ==== Элементы (описания) ====
   const ELEMENTS = {
     "Клетчатка": {desc:"Питает микрофлору, поддерживает перистальтику.", unit:"г"},
     "Кальций": {desc:"Зубы и кости; следим за балансом Ca:P.", unit:"мг"},
@@ -282,7 +273,6 @@
     "Витамин A": {desc:"Слизистые, зрение.", unit:"мкг"}
   };
 
-  // === Питательные ориентиры NDF ===
   function ndfTargetsKg(weightKg, hayShare = 0.7){
     const ndfPerKg = 12;
     const ndfDay = ndfPerKg * (weightKg||0);
@@ -321,7 +311,6 @@
     const list=$('#herbList'); if(!list) return;
     list.innerHTML=''; Object.keys(rowRefs).forEach(k=>delete rowRefs[k]);
 
-    // Множество для "уже имеющихся": входим в список пользователя, но НЕ помечены как _new
     const EXISTING_AND_IN_USER = new Set(Object.keys(HERBS).filter(n => USER_REQ_SET.has(n) && !HERBS[n]._new));
 
     Object.keys(HERBS).sort((a,b)=>a.localeCompare(b,'ru')).forEach(name=>{
@@ -366,7 +355,6 @@
     buildHerbs();
   }
 
-  // Onboarding
   $('#next1').addEventListener('click', ()=>{
     const name=($('#petName').value||'').trim(); if(!name) return alert('Введите имя питомца.');
     S.name=name; save(); $('#nameInline1').textContent=name; showOnly($('#step2'));
@@ -388,14 +376,12 @@
     S.onboarding=true; save(); $('#dnLabel').textContent=dailyNorm(); $('#nameInline3').textContent=S.name||'питомца'; showOnly($('#mealChoice'));
   });
 
-  // Meal selection
   $$('#mealChoice [data-meal]').forEach(b=> b.addEventListener('click', ()=>{
     S.meal=b.dataset.meal; save(); showOnly($('#herbsScreen')); $('#result').classList.add('hidden'); $$('.amt').forEach(i=>i.value=0);
   }));
 
   function readAmounts(){ const a={}; $$('.amt').forEach(i=>a[i.dataset.name]=Number(i.value)||0); return a; }
 
-  // Ограничение доз
   function clampToMaxPerMeal(amounts){
     const out={};
     for(const n of Object.keys(amounts)){
@@ -450,7 +436,6 @@
     }
     if(totals.highOx>=30) warn.push(`<div class="note warnnote">Много оксалатов (мангольд/шпинат/щавель): ${totals.highOx.toFixed(0)} г.</div>`);
 
-    // Индивидуальные предупреждения
     const doseAlerts=[];
     for(const [n,g] of Object.entries(amounts)){
       const h=HERBS[n]; if(!h||!g) continue;
@@ -500,7 +485,6 @@
       return;
     }
 
-    // При нехватке массы — сокращаем самые низкоклетчаточные текущие
     let stillNeed = Math.max(0, need);
     let needMoreGrams = stillNeed>0 ? Math.ceil(stillNeed/0.03) : 0;
     const lowFiberPool = Object.keys(amounts).filter(n=>amounts[n]>0).sort((a,b)=>(HERBS[a].fiber||0)-(HERBS[b].fiber||0));
@@ -690,7 +674,7 @@
         <div class="k">Белок</div><div>${h.protein??'—'} г / 100 г</div>
         <div class="k">Фосфор</div><div>${h.p??'—'} мг / 100 г</div>
         <div class="k">Калий</div><div>${h.k??'—'} мг / 100 г</div>
-        <div class="k">Магний</div><div>${h.mg??'—'} мг / 100 г</div>
+        <div class="к">Магний</div><div>${h.mg??'—'} мг / 100 г</div>
         <div class="k">Натрий</div><div>${h.na??'—'} мг / 100 г</div>
         <div class="k">Железо</div><div>${h.fe??'—'} мг / 100 г</div>
         <div class="k">Витамин A</div><div>${h.va??'—'} мкг / 100 г</div>
@@ -698,7 +682,6 @@
     openModal(name, `${img}${h.info?`<div style="margin-top:8px">${h.info}</div>`:''}${extra}<div style="margin-top:8px">${table}</div>`);
   }
 
-  // Настройки
   function openSettings(){
     const dn=dailyNorm(), half=Math.round(dn/2);
     const hayPct = Math.round((S.hayShare??0.7)*100);
